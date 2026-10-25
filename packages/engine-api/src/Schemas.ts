@@ -5,6 +5,8 @@ import {
   AllPlayers,
   Difficulty,
   Duos,
+  ADVISOR_IDS,
+  DECISION_IDS,
   FOCUS_IDS,
   LAW_IDS,
   GameMapSize,
@@ -45,6 +47,7 @@ export type Intent =
   | EmbargoAllIntent
   | SetFocusIntent
   | SetLawIntent
+  | GsActionIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
   | KickPlayerIntent
@@ -59,6 +62,7 @@ export type BoatAttackIntent = z.infer<typeof BoatAttackIntentSchema>;
 export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
 export type SetFocusIntent = z.infer<typeof SetFocusIntentSchema>;
 export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
+export type GsActionIntent = z.infer<typeof GsActionIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
 export type AllianceRejectIntent = z.infer<typeof AllianceRejectIntentSchema>;
@@ -488,6 +492,12 @@ export const SetLawIntentSchema = z.object({
   law: z.enum(LAW_IDS),
 });
 
+/** Spend political power on a decision or an advisor. */
+export const GsActionIntentSchema = z.object({
+  type: z.literal("gs_action"),
+  action: z.enum([...DECISION_IDS, ...ADVISOR_IDS]),
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -597,6 +607,7 @@ export const IntentSchema = z.discriminatedUnion("type", [
   EmbargoAllIntentSchema,
   SetFocusIntentSchema,
   SetLawIntentSchema,
+  GsActionIntentSchema,
   MoveWarshipIntentSchema,
   QuickChatIntentSchema,
   AllianceExtensionIntentSchema,

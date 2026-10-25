@@ -13,7 +13,14 @@ import {
   FOCUS_TREE,
   modifiersOf,
   newNationState,
+  ADVISOR_COST,
+  ADVISOR_SLOTS,
+  aiChoose,
+  canTakeAction,
+  setLaw,
   startFocus,
+  takeAction,
+  troopCapModifier,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
@@ -178,10 +185,100 @@ describe("GrandStrategyExecution", () => {
   test("snapshot round trip preserves grand strategy state", async () => {
     game.addExecution(new SetFocusExecution(a, "conscription"));
     seconds(3);
+    const sa = grandStrategyOf(game)!.stateOf(a)!;
+    sa.politicalPower = 500_000;
+    takeAction(sa, "emergency_production");
+    takeAction(sa, "industrial_planner");
     const { bytes, restored, again } = await roundTrip(game, "ocean_and_land");
     expect(diffSnapshots(bytes, again)).toEqual([]);
     const gs = grandStrategyOf(restored)!;
     expect(gs).not.toBeNull();
-    expect(gs.stateOf(restored.player(a.id()))!.focus).toBe("conscription");
+    const ra = gs.stateOf(restored.player(a.id()))!;
+    expect(ra.focus).toBe("conscription");
+    expect(ra.advisors).toEqual(["industrial_planner"]);
+    expect(ra.activeDecisions.map((e) => e.id)).toEqual([
+      "emergency_production",
+    ]);
+  });
+
+  test("conscription laws raise the troop cap; restore keeps it", async () => {
+    seconds(1);
+    const gs = grandStrategyOf(game)!;
+    const base = game.config().maxTroops(a);
+    const s = gs.stateOf(a)!;
+    s.warSupport = 1000;
+    s.politicalPower = 1_000_000;
+    expect(setLaw(s, "extensive_conscription")).toBe("ok");
+    expect(troopCapModifier(s)).toBe(100);
+    expect(game.config().maxTroops(a)).toBeCloseTo(base * 1.1, 6);
+    // The other nation keeps its own cap.
+    expect(troopCapModifier(gs.stateOf(b)!)).toBe(0);
+    const { restored } = await roundTrip(game, "ocean_and_land");
+    expect(restored.config().maxTroops(restored.player(a.id()))).toBeCloseTo(
+      base * 1.1,
+      6,
+    );
+  });
+});
+
+describe("troop cap modifier", () => {
+  test("sums laws and focuses and never drops below half", () => {
+    const s = newNationState(0);
+    expect(troopCapModifier(s)).toBe(0);
+    s.completed.push("conscription", "general_mobilization");
+    s.conscriptionLaw = "service_by_requirement";
+    expect(troopCapModifier(s)).toBe(50 + 100 + 200);
+    s.completed.length = 0;
+    s.conscriptionLaw = "volunteer_only";
+    expect(troopCapModifier(s)).toBe(-100);
+  });
+});
+
+describe("decisions and advisors", () => {
+  test("a decision costs PP, runs, then cools down", () => {
+    const s = newNationState(0);
+    const base = modifiersOf(s).production;
+    expect(takeAction(s, "emergency_production")).toBe("no_political_power");
+    s.politicalPower = 200_000;
+    expect(takeAction(s, "emergency_production")).toBe("ok");
+    expect(s.politicalPower).toBe(100_000);
+    expect(modifiersOf(s).production).toBe(base + 400);
+    expect(canTakeAction(s, "emergency_production")).toBe("cooldown");
+    for (let i = 0; i < 60; i++) advanceSecond(s, input);
+    expect(modifiersOf(s).production).toBe(base);
+    expect(canTakeAction(s, "emergency_production")).toBe("cooldown");
+    for (let i = 0; i < 120; i++) advanceSecond(s, input);
+    expect(canTakeAction(s, "emergency_production")).not.toBe("cooldown");
+  });
+
+  test("propaganda drive raises war support instantly", () => {
+    const s = newNationState(0);
+    s.politicalPower = 100_000;
+    const ws = s.warSupport;
+    expect(takeAction(s, "propaganda_drive")).toBe("ok");
+    expect(s.warSupport).toBe(ws + 100);
+    expect(s.activeDecisions).toEqual([]);
+  });
+
+  test("advisors are permanent, unique and slot-limited", () => {
+    const s = newNationState(0);
+    s.politicalPower = ADVISOR_COST * 3;
+    expect(takeAction(s, "army_chief")).toBe("ok");
+    expect(takeAction(s, "army_chief")).toBe("hired");
+    expect(takeAction(s, "defense_minister")).toBe("ok");
+    expect(s.advisors.length).toBe(ADVISOR_SLOTS);
+    expect(takeAction(s, "political_advisor")).toBe("no_slots");
+    expect(modifiersOf(s).attackLoss).toBe(-80);
+    expect(modifiersOf(s).defense).toBe(100); // default laws give neither
+  });
+
+  test("AI spends political power once its laws are maxed", () => {
+    const s = newNationState(0);
+    s.conscriptionLaw = "extensive_conscription";
+    s.economyLaw = "war_economy_law";
+    s.politicalPower = 500_000;
+    const c = aiChoose(s, "militarist");
+    expect(c.law).toBeNull();
+    expect(c.action).toBe("army_chief");
   });
 });

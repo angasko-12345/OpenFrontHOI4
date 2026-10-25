@@ -223,6 +223,23 @@ export const ECONOMY_LAW_IDS = [
 export const LAW_IDS = [...CONSCRIPTION_LAW_IDS, ...ECONOMY_LAW_IDS] as const;
 export type LawID = (typeof LAW_IDS)[number];
 
+/** Grand Strategy one-off decisions bought with political power. */
+export const DECISION_IDS = [
+  "emergency_production",
+  "war_bonds",
+  "propaganda_drive",
+] as const;
+export type DecisionID = (typeof DECISION_IDS)[number];
+
+/** Grand Strategy advisors: permanent, limited slots. */
+export const ADVISOR_IDS = [
+  "industrial_planner",
+  "army_chief",
+  "defense_minister",
+  "political_advisor",
+] as const;
+export type AdvisorID = (typeof ADVISOR_IDS)[number];
+
 export enum UnitType {
   TransportShip = "Transport",
   Warship = "Warship",

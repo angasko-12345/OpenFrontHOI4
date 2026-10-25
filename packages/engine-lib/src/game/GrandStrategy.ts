@@ -15,7 +15,11 @@
  */
 
 import {
+  ADVISOR_IDS,
+  AdvisorID,
   CONSCRIPTION_LAW_IDS,
+  DECISION_IDS,
+  DecisionID,
   ECONOMY_LAW_IDS,
   FOCUS_IDS,
   FocusID,
@@ -35,6 +39,8 @@ export interface GsModifiers {
   defense: number;
   /** Troop (manpower) growth. */
   manpower: number;
+  /** Troop cap (max troops). */
+  maxTroops: number;
   /** Gold income. */
   gold: number;
   /** Political power gain. */
@@ -49,6 +55,7 @@ export const ZERO_MODIFIERS: Readonly<GsModifiers> = Object.freeze({
   attackLoss: 0,
   defense: 0,
   manpower: 0,
+  maxTroops: 0,
   gold: 0,
   politicalPower: 0,
   warSupport: 0,
@@ -79,16 +86,16 @@ export const FOCUS_TREE: readonly FocusDef[] = [
   },
   {
     id: "conscription",
-    name: "Conscription Law",
-    description: "Manpower growth +10%.",
+    name: "Conscription Drive",
+    description: "Manpower growth +10%, max troops +5%.",
     seconds: 60,
     requires: [],
     exclusive: [],
-    effects: { manpower: 100 },
+    effects: { manpower: 100, maxTroops: 50 },
   },
   {
     id: "civilian_economy",
-    name: "Civilian Economy",
+    name: "Consumer Goods Drive",
     description: "Gold income +15%.",
     seconds: 60,
     requires: [],
@@ -107,15 +114,15 @@ export const FOCUS_TREE: readonly FocusDef[] = [
   {
     id: "general_mobilization",
     name: "General Mobilization",
-    description: "Manpower growth +15%, gold -5%.",
+    description: "Manpower growth +15%, max troops +10%, gold -5%.",
     seconds: 90,
     requires: ["conscription"],
     exclusive: [],
-    effects: { manpower: 150, gold: -50 },
+    effects: { manpower: 150, maxTroops: 100, gold: -50 },
   },
   {
     id: "war_economy",
-    name: "War Economy",
+    name: "Arms Programme",
     description: "Factory output +25%, gold -10%.",
     seconds: 90,
     requires: ["rearmament"],
@@ -209,9 +216,9 @@ export const LAWS: readonly LawDef[] = [
     id: "volunteer_only",
     category: "conscription",
     name: "Volunteer Only",
-    description: "Manpower -15%, gold +5%.",
+    description: "Max troops -10%, manpower -15%, gold +5%.",
     minWarSupport: 0,
-    effects: { manpower: -150, gold: 50 },
+    effects: { manpower: -150, maxTroops: -100, gold: 50 },
   },
   {
     id: "limited_conscription",
@@ -225,17 +232,18 @@ export const LAWS: readonly LawDef[] = [
     id: "extensive_conscription",
     category: "conscription",
     name: "Extensive Conscription",
-    description: "Manpower +15%, gold -5%.",
+    description: "Max troops +10%, manpower +15%, gold -5%.",
     minWarSupport: 400,
-    effects: { manpower: 150, gold: -50 },
+    effects: { manpower: 150, maxTroops: 100, gold: -50 },
   },
   {
     id: "service_by_requirement",
     category: "conscription",
     name: "Service by Requirement",
-    description: "Manpower +30%, gold -15%, factory output -5%.",
+    description:
+      "Max troops +20%, manpower +30%, gold -15%, factory output -5%.",
     minWarSupport: 700,
-    effects: { manpower: 300, gold: -150, production: -50 },
+    effects: { manpower: 300, maxTroops: 200, gold: -150, production: -50 },
   },
   {
     id: "civilian_economy_law",
@@ -292,6 +300,117 @@ export function lawsIn(category: LawCategory): LawDef[] {
   return LAWS.filter((l) => l.category === category);
 }
 
+export interface DecisionDef {
+  id: DecisionID;
+  name: string;
+  description: string;
+  /** Political power cost, in thousandths. */
+  cost: number;
+  /** Seconds the effects last (0 = instant only). */
+  seconds: number;
+  /** Seconds before it can be taken again, counted from when it is taken. */
+  cooldown: number;
+  effects: Partial<GsModifiers>;
+  /** Instant war support change, per-mille. */
+  warSupport: number;
+}
+
+export const DECISIONS: readonly DecisionDef[] = [
+  {
+    id: "emergency_production",
+    name: "Emergency Production",
+    description: "Factory output +40% for 60s.",
+    cost: 100_000,
+    seconds: 60,
+    cooldown: 180,
+    effects: { production: 400 },
+    warSupport: 0,
+  },
+  {
+    id: "war_bonds",
+    name: "War Bonds",
+    description: "Gold income +30% for 60s, war support -2%.",
+    cost: 75_000,
+    seconds: 60,
+    cooldown: 180,
+    effects: { gold: 300 },
+    warSupport: -20,
+  },
+  {
+    id: "propaganda_drive",
+    name: "Propaganda Drive",
+    description: "War support +10% now.",
+    cost: 75_000,
+    seconds: 0,
+    cooldown: 120,
+    effects: {},
+    warSupport: 100,
+  },
+];
+
+export interface AdvisorDef {
+  id: AdvisorID;
+  name: string;
+  description: string;
+  effects: Partial<GsModifiers>;
+}
+
+export const ADVISORS: readonly AdvisorDef[] = [
+  {
+    id: "industrial_planner",
+    name: "Industrial Planner",
+    description: "Factory output +10%.",
+    effects: { production: 100 },
+  },
+  {
+    id: "army_chief",
+    name: "Chief of the Army",
+    description: "Losses when attacking -8%.",
+    effects: { attackLoss: -80 },
+  },
+  {
+    id: "defense_minister",
+    name: "Defense Minister",
+    description: "Enemies attacking you lose 10% more troops.",
+    effects: { defense: 100 },
+  },
+  {
+    id: "political_advisor",
+    name: "Political Advisor",
+    description: "Political power gain +20%.",
+    effects: { politicalPower: 200 },
+  },
+];
+
+/** Advisor slots per nation. */
+export const ADVISOR_SLOTS = 2;
+/** Cost of hiring an advisor, in thousandths of political power. */
+export const ADVISOR_COST = 150_000;
+
+const DECISION_BY_ID = new Map<string, DecisionDef>(
+  DECISIONS.map((d) => [d.id, d]),
+);
+const ADVISOR_BY_ID = new Map<string, AdvisorDef>(
+  ADVISORS.map((a) => [a.id, a]),
+);
+
+if (
+  DECISIONS.length !== DECISION_IDS.length ||
+  !DECISION_IDS.every((id) => DECISION_BY_ID.has(id)) ||
+  ADVISORS.length !== ADVISOR_IDS.length ||
+  !ADVISOR_IDS.every((id) => ADVISOR_BY_ID.has(id))
+) {
+  throw new Error("DECISIONS/ADVISORS and their ids disagree");
+}
+
+export function decisionById(id: string): DecisionDef | undefined {
+  return DECISION_BY_ID.get(id);
+}
+
+export function advisorById(id: string): AdvisorDef | undefined {
+  return ADVISOR_BY_ID.get(id);
+}
+
 export const DEFAULT_CONSCRIPTION_LAW: LawID = "limited_conscription";
 export const DEFAULT_ECONOMY_LAW: LawID = "civilian_economy_law";
 
@@ -317,6 +436,17 @@ export interface NationGsState {
   defendedThisSecond: boolean;
   /** Troops lost attacking other nations since the last second boundary. */
   attackLossesThisSecond: number;
+  /** Decisions whose effects are running: id and seconds left. */
+  activeDecisions: TimedEntry[];
+  /** Decisions on cooldown: id and seconds left. */
+  decisionCooldowns: TimedEntry[];
+  /** Hired advisor ids, in hiring order. */
+  advisors: string[];
+}
+
+export interface TimedEntry {
+  id: string;
+  seconds: number;
 }
 
 // Tunables
@@ -337,6 +467,8 @@ export const STOCKPILE_CAP_MULTIPLE = 2;
 export const UNEQUIPPED_LOSS_PENALTY = 1000;
 /** Political power gained per second, in thousandths, before modifiers. */
 export const PP_PER_SECOND = 1000;
+/** Lowest troop-cap modifier, per-mille: max troops never drop below half. */
+export const MIN_TROOP_CAP_MODIFIER = -500;
 /** Political power cap, in thousandths. */
 export const PP_CAP = 500_000;
 /** Cost of changing one law, in thousandths of political power. */
@@ -364,6 +496,9 @@ export function newNationState(startEquipment: number): NationGsState {
     economyLaw: DEFAULT_ECONOMY_LAW,
     defendedThisSecond: false,
     attackLossesThisSecond: 0,
+    activeDecisions: [],
+    decisionCooldowns: [],
+    advisors: [],
   };
 }
 
@@ -383,7 +518,20 @@ export function modifiersOf(state: NationGsState): GsModifiers {
     const l = LAW_BY_ID.get(id);
     if (l !== undefined) addEffects(m, l.effects);
   }
+  for (const id of state.advisors) {
+    const a = ADVISOR_BY_ID.get(id);
+    if (a !== undefined) addEffects(m, a.effects);
+  }
+  for (const e of state.activeDecisions) {
+    const d = DECISION_BY_ID.get(e.id);
+    if (d !== undefined) addEffects(m, d.effects);
+  }
   return m;
+}
+
+/** Troop-cap modifier (per-mille) a state's focuses and laws give. */
+export function troopCapModifier(state: NationGsState): number {
+  return Math.max(MIN_TROOP_CAP_MODIFIER, modifiersOf(state).maxTroops);
 }
 
 export type FocusCheck =
@@ -447,6 +595,57 @@ export function setLaw(state: NationGsState, id: string): LawCheck {
   if (l.category === "conscription") state.conscriptionLaw = l.id;
   else state.economyLaw = l.id;
   return "ok";
+}
+
+export type ActionCheck =
+  | "ok"
+  | "unknown"
+  | "cooldown"
+  | "hired"
+  | "no_slots"
+  | "no_political_power";
+
+/** Can the nation take this decision or hire this advisor now? */
+export function canTakeAction(state: NationGsState, id: string): ActionCheck {
+  const d = DECISION_BY_ID.get(id);
+  if (d !== undefined) {
+    if (state.decisionCooldowns.some((c) => c.id === id)) return "cooldown";
+    if (state.politicalPower < d.cost) return "no_political_power";
+    return "ok";
+  }
+  if (ADVISOR_BY_ID.has(id)) {
+    if (state.advisors.includes(id)) return "hired";
+    if (state.advisors.length >= ADVISOR_SLOTS) return "no_slots";
+    if (state.politicalPower < ADVISOR_COST) return "no_political_power";
+    return "ok";
+  }
+  return "unknown";
+}
+
+/** Take a decision or hire an advisor, paying its political power. */
+export function takeAction(state: NationGsState, id: string): ActionCheck {
+  const check = canTakeAction(state, id);
+  if (check !== "ok") return check;
+  const d = DECISION_BY_ID.get(id);
+  if (d !== undefined) {
+    state.politicalPower -= d.cost;
+    state.warSupport = clampPermille(state.warSupport + d.warSupport);
+    if (d.seconds > 0) state.activeDecisions.push({ id, seconds: d.seconds });
+    state.decisionCooldowns.push({ id, seconds: d.cooldown });
+  } else {
+    state.politicalPower -= ADVISOR_COST;
+    state.advisors.push(id);
+  }
+  return "ok";
+}
+
+/** Count timers down one second and drop the finished ones. */
+function tickTimers(list: TimedEntry[]): TimedEntry[] {
+  const out: TimedEntry[] = [];
+  for (const e of list) {
+    if (e.seconds > 1) out.push({ id: e.id, seconds: e.seconds - 1 });
+  }
+  return out;
 }
 
 export function militaryFactories(
@@ -520,6 +719,9 @@ export function advanceSecond(
       state.focusProgress = 0;
     }
   }
+
+  state.activeDecisions = tickTimers(state.activeDecisions);
+  state.decisionCooldowns = tickTimers(state.decisionCooldowns);
 
   const mods = modifiersOf(state);
 
@@ -675,7 +877,24 @@ const AI_LAW_CEILING: Record<AiPersonality, readonly LawID[]> = {
 export interface AiChoice {
   focus: FocusID | null;
   law: LawID | null;
+  /** Decision or advisor to buy with spare political power. */
+  action: DecisionID | AdvisorID | null;
 }
+
+const AI_ADVISORS: Record<AiPersonality, readonly AdvisorID[]> = {
+  industrialist: ["industrial_planner", "political_advisor"],
+  militarist: ["army_chief", "industrial_planner"],
+  defender: ["defense_minister", "industrial_planner"],
+};
+
+const AI_DECISIONS: Record<AiPersonality, readonly DecisionID[]> = {
+  industrialist: ["war_bonds", "emergency_production"],
+  militarist: ["emergency_production", "propaganda_drive"],
+  defender: ["propaganda_drive", "emergency_production"],
+};
+
+/** AI only spends on decisions and advisors above this reserve (thousandths). */
+export const AI_PP_RESERVE = LAW_CHANGE_COST + 100_000;
 
 /**
  * The AI's move this second: a focus when idle (its preferred one, else the
@@ -709,5 +928,12 @@ export function aiChoose(
       break;
     }
   }
-  return { focus, law };
+  let action: DecisionID | AdvisorID | null = null;
+  if (law === null && state.politicalPower >= AI_PP_RESERVE) {
+    action =
+      AI_ADVISORS[personality].find((id) => canTakeAction(state, id) === "ok") ??
+      AI_DECISIONS[personality].find((id) => canTakeAction(state, id) === "ok") ??
+      null;
+  }
+  return { focus, law, action };
 }

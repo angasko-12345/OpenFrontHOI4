@@ -1,11 +1,21 @@
-import { FocusID, LawID } from "@openfront/engine-api/game/GameTypes";
+import {
+  AdvisorID,
+  DecisionID,
+  FocusID,
+  LawID,
+} from "@openfront/engine-api/game/GameTypes";
 import {
   GameUpdateType,
   GrandStrategyUpdate,
 } from "@openfront/engine-api/game/GameUpdates";
 import { renderTroops } from "@openfront/engine-lib/Format";
 import {
+  ADVISOR_COST,
+  ADVISOR_SLOTS,
+  ADVISORS,
   availableFocuses,
+  canTakeAction,
+  DECISIONS,
   canSetLaw,
   canStartFocus,
   focusById,
@@ -20,6 +30,7 @@ import { html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { Controller } from "../../Controller";
 import {
+  SendGsActionIntentEvent,
   SendSetFocusIntentEvent,
   SendSetLawIntentEvent,
 } from "../../Transport";
@@ -39,7 +50,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   /** Whole panel expanded. Phones start collapsed to a small chip. */
   @state() private expanded =
     typeof window === "undefined" || window.innerWidth >= 640;
-  @state() private section: "none" | "focuses" | "laws" = "none";
+  @state() private section: "none" | "focuses" | "laws" | "decisions" =
+    "none";
 
   createRenderRoot() {
     return this;
@@ -53,7 +65,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const updates = this.game.updatesSinceLastTick();
     const list = updates?.[GameUpdateType.GrandStrategy] ?? [];
     for (const u of list) {
-      if (u.player === me.id()) this.data = u;
+      if (u.player !== me.id()) continue;
+      if (this.data?.troopCapModifier !== u.troopCapModifier) {
+        // The client only learns its own cap modifier; show it in the HUD.
+        const myId = me.id();
+        const m = u.troopCapModifier;
+        this.game.config().setTroopCapModifier((p) =>
+          p.isPlayer() && p.id() === myId ? m : 0,
+        );
+      }
+      this.data = u;
     }
   }
 
@@ -69,7 +90,11 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     this.eventBus.emit(new SendSetLawIntentEvent(id));
   }
 
-  private toggle(section: "focuses" | "laws") {
+  private act(id: DecisionID | AdvisorID) {
+    this.eventBus.emit(new SendGsActionIntentEvent(id));
+  }
+
+  private toggle(section: "focuses" | "laws" | "decisions") {
     this.section = this.section === section ? "none" : section;
   }
 
@@ -88,6 +113,9 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       economyLaw: d.economyLaw,
       defendedThisSecond: false,
       attackLossesThisSecond: 0,
+      activeDecisions: d.activeDecisions,
+      decisionCooldowns: d.decisionCooldowns,
+      advisors: d.advisors,
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -160,6 +188,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               Laws
             </button>
             <button
+              class="min-h-9 rounded px-3 sm:min-h-0 sm:px-2 ${
+                this.section === "decisions"
+                  ? "bg-blue-800"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }"
+              @click=${() => this.toggle("decisions")}
+            >
+              Decisions
+            </button>
+            <button
               class="min-h-9 min-w-9 rounded bg-gray-700 px-2 hover:bg-gray-600 sm:min-h-0 sm:min-w-0"
               aria-label="Minimize"
               @click=${() => {
@@ -184,6 +222,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="text-right">${d.politicalPower}</span>
           <span>War support</span>
           <span class="text-right">${pct(d.warSupport)}</span>
+          ${
+            d.troopCapModifier !== 0
+              ? html`<span>Max troops</span>
+                  <span class="text-right"
+                    >${d.troopCapModifier > 0 ? "+" : ""}${pct(
+                      d.troopCapModifier,
+                    )}</span
+                  >`
+              : nothing
+          }
         </div>
         <div class="mt-1">
           ${
@@ -252,6 +300,84 @@ export class GrandStrategyPanel extends LitElement implements Controller {
                         Not enough political power.
                       </div>`
                 }
+              </div>`
+            : nothing
+        }
+        ${
+          this.section === "decisions"
+            ? html`<div class="mt-2 space-y-2">
+                <div>
+                  <div class="font-semibold">Decisions</div>
+                  ${DECISIONS.map((dec) => {
+                    const check = canTakeAction(state, dec.id);
+                    const running = d.activeDecisions.find(
+                      (e) => e.id === dec.id,
+                    );
+                    const cooldown = d.decisionCooldowns.find(
+                      (e) => e.id === dec.id,
+                    );
+                    const enabled = check === "ok";
+                    return html`<button
+                      class="mt-1 block w-full rounded px-3 py-2 text-left sm:px-2 sm:py-1 ${
+                        running
+                          ? "bg-blue-900/80"
+                          : enabled
+                            ? "bg-gray-700 hover:bg-gray-600"
+                            : "bg-gray-900/60 text-gray-500"
+                      }"
+                      ?disabled=${!enabled}
+                      @click=${() => this.act(dec.id)}
+                    >
+                      <div class="font-semibold">
+                        ${dec.name}
+                        <span class="float-right font-normal"
+                          >${
+                            running
+                              ? `${running.seconds}s left`
+                              : cooldown
+                                ? `ready in ${cooldown.seconds}s`
+                                : `${dec.cost / 1000} PP`
+                          }</span
+                        >
+                      </div>
+                      <div class="opacity-80">${dec.description}</div>
+                    </button>`;
+                  })}
+                </div>
+                <div>
+                  <div class="font-semibold">
+                    Advisors (${d.advisors.length}/${ADVISOR_SLOTS},
+                    ${ADVISOR_COST / 1000} PP)
+                  </div>
+                  ${ADVISORS.map((a) => {
+                    const check = canTakeAction(state, a.id);
+                    const hired = check === "hired";
+                    const enabled = check === "ok";
+                    return html`<button
+                      class="mt-1 block w-full rounded px-3 py-2 text-left sm:px-2 sm:py-1 ${
+                        hired
+                          ? "bg-green-900/70"
+                          : enabled
+                            ? "bg-gray-700 hover:bg-gray-600"
+                            : "bg-gray-900/60 text-gray-500"
+                      }"
+                      ?disabled=${!enabled}
+                      @click=${() => this.act(a.id)}
+                    >
+                      <div class="font-semibold">
+                        ${a.name}
+                        ${
+                          hired
+                            ? html`<span class="float-right font-normal"
+                                >Hired</span
+                              >`
+                            : nothing
+                        }
+                      </div>
+                      <div class="opacity-80">${a.description}</div>
+                    </button>`;
+                  })}
+                </div>
               </div>`
             : nothing
         }

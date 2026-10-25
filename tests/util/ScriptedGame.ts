@@ -233,6 +233,7 @@ function queuedIntent(game: Game, p: Player, tick: number): Intent | null {
     { type: "toggle_pause", paused: false },
     { type: "set_focus", focus: "industrial_expansion" },
     { type: "set_law", law: "volunteer_only" },
+    { type: "gs_action", action: "propaganda_drive" },
   ];
   return queued[(tick - 20) / 2] ?? null;
 }

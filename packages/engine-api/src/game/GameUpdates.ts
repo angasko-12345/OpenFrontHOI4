@@ -163,6 +163,13 @@ export interface GrandStrategyUpdate {
   warSupport: number;
   conscriptionLaw: string;
   economyLaw: string;
+  /** Troop-cap modifier from laws and focuses, per-mille. */
+  troopCapModifier: number;
+  advisors: string[];
+  /** Running decisions and their seconds left. */
+  activeDecisions: { id: string; seconds: number }[];
+  /** Decisions on cooldown and their seconds left. */
+  decisionCooldowns: { id: string; seconds: number }[];
 }
 
 export interface BonusEventUpdate {

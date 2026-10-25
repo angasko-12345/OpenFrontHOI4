@@ -28,6 +28,7 @@ import { PauseExecution } from "./PauseExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
 import { SetFocusExecution } from "./SetFocusExecution";
+import { GsActionExecution } from "./GsActionExecution";
 import { SetLawExecution } from "./SetLawExecution";
 import { SpawnExecution } from "./SpawnExecution";
 import { TargetPlayerExecution } from "./TargetPlayerExecution";
@@ -119,6 +120,8 @@ export class Executor {
         return new SetFocusExecution(player, intent.focus);
       case "set_law":
         return new SetLawExecution(player, intent.law);
+      case "gs_action":
+        return new GsActionExecution(player, intent.action);
       case "build_unit":
         return new ConstructionExecution(
           player,

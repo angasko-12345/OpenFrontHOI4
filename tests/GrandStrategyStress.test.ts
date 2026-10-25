@@ -76,6 +76,12 @@ function checkInvariants(s: NationGsState, maxTroops: number): void {
   expect(s.politicalPower).toBeGreaterThanOrEqual(0);
   expect(s.politicalPower).toBeLessThanOrEqual(PP_CAP);
   expect(new Set(s.completed).size).toBe(s.completed.length);
+  expect(new Set(s.advisors).size).toBe(s.advisors.length);
+  expect(s.advisors.length).toBeLessThanOrEqual(2);
+  for (const e of [...s.activeDecisions, ...s.decisionCooldowns]) {
+    expect(Number.isInteger(e.seconds)).toBe(true);
+    expect(e.seconds).toBeGreaterThan(0);
+  }
   if (s.focus !== null) {
     const f = focusById(s.focus)!;
     expect(f).toBeDefined();
@@ -419,9 +425,9 @@ describe("GrandStrategyExecution edge cases", () => {
 });
 
 describe("GrandStrategy snapshot migration", () => {
-  test("v1 records migrate to v2 with defaults", () => {
-    const migrate = GrandStrategyExecutionSnapshot.migrations[1];
-    const v2 = migrate({
+  test("v1 records migrate through v3 with defaults", () => {
+    const m = GrandStrategyExecutionSnapshot.migrations;
+    const v2 = m[1]({
       initialized: true,
       states: [
         {
@@ -434,7 +440,9 @@ describe("GrandStrategy snapshot migration", () => {
         },
       ],
     });
-    const parsed = GrandStrategyExecutionSnapshot.schema.parse(v2);
+    const parsed = GrandStrategyExecutionSnapshot.schema.parse(m[2](v2));
+    expect(parsed.states[0].advisors).toEqual([]);
+    expect(parsed.states[0].activeDecisions).toEqual([]);
     expect(parsed.states[0].warSupport).toBe(BASE_WAR_SUPPORT);
     expect(parsed.states[0].conscriptionLaw).toBe("limited_conscription");
     expect(parsed.states[0].completed).toEqual(["conscription"]);

@@ -324,12 +324,29 @@ export class Config {
   }
 
   maxTroops(player: PlayerLike): number {
-    return this.troopCap(player, true);
+    return this.applyTroopCapModifier(player, this.troopCap(player, true));
   }
 
   /** maxTroops without what cities add */
   maxTroopsWithoutCities(player: PlayerLike): number {
-    return this.troopCap(player, false);
+    return this.applyTroopCapModifier(player, this.troopCap(player, false));
+  }
+
+  private troopCapModifier: ((player: PlayerLike) => number) | null = null;
+
+  /**
+   * Install the per-mille troop-cap modifier (Grand Strategy laws and
+   * focuses). It must be a pure function of game state so every client
+   * computes the same cap.
+   */
+  setTroopCapModifier(fn: ((player: PlayerLike) => number) | null): void {
+    this.troopCapModifier = fn;
+  }
+
+  private applyTroopCapModifier(player: PlayerLike, cap: number): number {
+    if (this.troopCapModifier === null) return cap;
+    const m = this.troopCapModifier(player);
+    return m === 0 ? cap : (cap * (1000 + m)) / 1000;
   }
 
   private troopCap(player: PlayerLike, withCities: boolean): number {

@@ -1,6 +1,12 @@
-import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
+import {
+  AdvisorID,
+  DecisionID,
+  PlayerType,
+  UnitType,
+} from "@openfront/engine-api/game/GameTypes";
 import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import {
+  ActionCheck,
   advanceSecond,
   aiChoose,
   aiPersonalityFor,
@@ -19,6 +25,9 @@ import {
   newNationState,
   setLaw,
   startFocus,
+  takeAction,
+  TimedEntry,
+  troopCapModifier,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import { zInt } from "@openfront/engine-lib/snapshot/SnapshotType";
@@ -52,8 +61,18 @@ export class GrandStrategyExecution implements Execution {
   private states = new Map<number, NationGsState>();
 
   init(mg: Game, _ticks: number): void {
+    this.attach(mg);
+  }
+
+  private attach(mg: Game): void {
     this.mg = mg;
     registry.set(mg, this);
+    // Laws and focuses move the troop cap. Read-only: never creates state.
+    mg.config().setTroopCapModifier((p) => {
+      if (p.type() === PlayerType.Bot) return 0;
+      const s = this.states.get(p.smallID());
+      return s === undefined ? 0 : troopCapModifier(s);
+    });
   }
 
   /** State for a participating player, created on first use. */
@@ -82,6 +101,12 @@ export class GrandStrategyExecution implements Execution {
     const s = this.stateOf(player);
     if (s === null) return "unknown";
     return setLaw(s, lawId);
+  }
+
+  takeAction(player: Player, id: DecisionID | AdvisorID): ActionCheck {
+    const s = this.stateOf(player);
+    if (s === null) return "unknown";
+    return takeAction(s, id);
   }
 
   /** Scale troop growth by manpower focuses, never past the troop cap. */
@@ -156,6 +181,7 @@ export class GrandStrategyExecution implements Execution {
         const choice = aiChoose(s, aiPersonalityFor(p.smallID()));
         if (choice.focus !== null) startFocus(s, choice.focus);
         if (choice.law !== null) setLaw(s, choice.law);
+        if (choice.action !== null) takeAction(s, choice.action);
       }
       const factoryLevels = p
         .units(UnitType.Factory)
@@ -183,6 +209,10 @@ export class GrandStrategyExecution implements Execution {
         warSupport: s.warSupport,
         conscriptionLaw: s.conscriptionLaw,
         economyLaw: s.economyLaw,
+        troopCapModifier: troopCapModifier(s),
+        advisors: [...s.advisors],
+        activeDecisions: copyTimers(s.activeDecisions),
+        decisionCooldowns: copyTimers(s.decisionCooldowns),
       });
     }
     // Dead players keep no state.
@@ -217,16 +247,15 @@ export class GrandStrategyExecution implements Execution {
         economyLaw: s.economyLaw,
         defendedThisSecond: s.defendedThisSecond,
         attackLossesThisSecond: s.attackLossesThisSecond,
+        activeDecisions: copyTimers(s.activeDecisions),
+        decisionCooldowns: copyTimers(s.decisionCooldowns),
+        advisors: [...s.advisors],
       })),
     });
   }
 
   restoreSnapshot(s: GrandStrategyState, r: SnapshotReader): void {
     this.mg = null;
-    if (s.initialized) {
-      this.mg = r.game;
-      registry.set(r.game, this);
-    }
     this.states = new Map(
       s.states.map((n) => [
         n.id,
@@ -242,11 +271,21 @@ export class GrandStrategyExecution implements Execution {
           economyLaw: n.economyLaw,
           defendedThisSecond: n.defendedThisSecond,
           attackLossesThisSecond: n.attackLossesThisSecond,
+          activeDecisions: copyTimers(n.activeDecisions),
+          decisionCooldowns: copyTimers(n.decisionCooldowns),
+          advisors: [...n.advisors],
         },
       ]),
     );
+    if (s.initialized) this.attach(r.game);
   }
 }
+
+function copyTimers(list: readonly TimedEntry[]): TimedEntry[] {
+  return list.map((e) => ({ id: e.id, seconds: e.seconds }));
+}
+
+const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
 
 const GrandStrategyStateSchema = z.object({
   initialized: z.boolean(),
@@ -264,6 +303,9 @@ const GrandStrategyStateSchema = z.object({
       economyLaw: z.string(),
       defendedThisSecond: z.boolean(),
       attackLossesThisSecond: zInt(),
+      activeDecisions: z.array(TimedEntrySchema),
+      decisionCooldowns: z.array(TimedEntrySchema),
+      advisors: z.array(z.string()),
     }),
   ),
 });
@@ -271,9 +313,19 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 2,
+  version: 3,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v3 added decisions and advisors.
+    2: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        activeDecisions: [],
+        decisionCooldowns: [],
+        advisors: [],
+      })),
+    }),
     // v2 added political power, war support and laws.
     1: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

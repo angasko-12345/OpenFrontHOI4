@@ -1,5 +1,10 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
-import type { FocusID, LawID } from "@openfront/engine-api/game/GameTypes";
+import type {
+  AdvisorID,
+  DecisionID,
+  FocusID,
+  LawID,
+} from "@openfront/engine-api/game/GameTypes";
 import {
   AllPlayers,
   GameType,
@@ -185,6 +190,10 @@ export class SendSetLawIntentEvent implements GameEvent {
   constructor(public readonly law: LawID) {}
 }
 
+export class SendGsActionIntentEvent implements GameEvent {
+  constructor(public readonly action: DecisionID | AdvisorID) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -341,6 +350,9 @@ export class Transport {
     );
     this.subscribe(SendSetLawIntentEvent, (e) =>
       this.sendIntent({ type: "set_law", law: e.law }),
+    );
+    this.subscribe(SendGsActionIntentEvent, (e) =>
+      this.sendIntent({ type: "gs_action", action: e.action }),
     );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),
