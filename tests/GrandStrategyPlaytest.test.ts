@@ -3,7 +3,11 @@ import {
   aiPersonalityFor,
   equippedPermille,
 } from "@openfront/engine-lib/game/GrandStrategy";
-import { grandStrategyOf } from "@openfront/engine/execution/GrandStrategyExecution";
+import {
+  GrandStrategyExecution,
+  grandStrategyOf,
+} from "@openfront/engine/execution/GrandStrategyExecution";
+import { vi } from "vitest";
 import { writeFileSync } from "node:fs";
 import {
   createScriptedRunner,
@@ -13,10 +17,24 @@ import {
 
 // Opt-in balance playtest: PT_RUN=1 npx vitest --run tests/GrandStrategyPlaytest.test.ts
 // Writes per-personality snapshots every 1200 ticks to $PT_OUT.
+// PT_SEED sets the game id (map seed). PT_GS=off neutralises every Grand
+// Strategy effect on combat, troops and gold, as a control run: the same
+// nations keep their personality labels, so any gap between labels is the map.
 test.skipIf(!process.env.PT_RUN)(
   "playtest: nations-only world match",
   { timeout: 1_100_000 },
   async () => {
+    if (process.env.PT_GS === "off") {
+      const proto = GrandStrategyExecution.prototype;
+      vi.spyOn(proto, "adjustCombat").mockImplementation(
+        (_a, _d, _t, attackerTroopLoss, defenderTroopLoss) => ({
+          attackerTroopLoss,
+          defenderTroopLoss,
+        }),
+      );
+      vi.spyOn(proto, "adjustTroopGrowth").mockImplementation((_p, b) => b);
+      vi.spyOn(proto, "adjustGold").mockImplementation((_p, b) => b);
+    }
     const start = scriptedGameStart({
       nations: 15,
       bots: 20,
@@ -24,6 +42,7 @@ test.skipIf(!process.env.PT_RUN)(
       doomsdayClock: { enabled: false, speed: "veryfast" },
     } as never);
     start.players = [];
+    if (process.env.PT_SEED) start.gameID = process.env.PT_SEED;
     const runner = await createScriptedRunner("world", start);
     const g = runner.game;
     const out: unknown[] = [];
