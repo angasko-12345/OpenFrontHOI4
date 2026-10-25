@@ -4,7 +4,9 @@ export type KeyboardLayoutMap = Map<string, string>;
 
 type KeyboardApi = {
   getLayoutMap(): Promise<KeyboardLayoutMap>;
-  addEventListener(event: string, callback: () => void): void;
+  // Chromium exposes navigator.keyboard without EventTarget methods, so the
+  // listener methods are optional and must be checked before use.
+  addEventListener?(event: string, callback: () => void): void;
   removeEventListener?(event: string, callback: () => void): void;
 };
 
@@ -22,7 +24,7 @@ let refreshId = 0;
 
 async function refreshGlobalLayoutMap() {
   const keyboard = getKeyboardApi();
-  if (!keyboard) return;
+  if (typeof keyboard?.getLayoutMap !== "function") return;
   const currentRefreshId = ++refreshId;
   try {
     const newMap = await keyboard.getLayoutMap();
@@ -50,7 +52,7 @@ export class KeyboardLayoutController implements ReactiveController {
     if (!initialized) {
       initialized = true;
       const keyboard = getKeyboardApi();
-      if (keyboard) {
+      if (typeof keyboard?.addEventListener === "function") {
         listeningKeyboard = keyboard;
         keyboard.addEventListener("layoutchange", refreshGlobalLayoutMap);
       }

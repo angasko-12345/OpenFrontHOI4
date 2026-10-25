@@ -67,6 +67,29 @@ describe("HelpModal keyboard layout refresh", () => {
     vi.restoreAllMocks();
   });
 
+  it("loads the layout map when navigator.keyboard is not an EventTarget (Chromium)", async () => {
+    const map = new Map([["KeyQ", "a"]]);
+    // Chromium's Keyboard has getLayoutMap but no addEventListener.
+    const keyboard = { getLayoutMap: vi.fn(() => Promise.resolve(map)) };
+    Object.defineProperty(Navigator.prototype, "keyboard", {
+      configurable: true,
+      value: keyboard,
+    });
+
+    const modal = new HelpModal();
+    const state = modal as unknown as {
+      keyboardLayout: { map: Map<string, string> | null };
+      connectedCallback: () => void;
+      disconnectedCallback: () => void;
+    };
+
+    expect(() => state.connectedCallback()).not.toThrow();
+    await vi.waitFor(() => {
+      expect(state.keyboardLayout.map).toBe(map);
+    });
+    state.disconnectedCallback();
+  });
+
   it("refreshes its layout map when the keyboard emits layoutchange", async () => {
     const firstMap = new Map([["KeyQ", "a"]]);
     const secondMap = new Map([["KeyQ", "q"]]);
