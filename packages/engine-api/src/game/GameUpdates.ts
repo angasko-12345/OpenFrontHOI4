@@ -115,6 +115,7 @@ export enum GameUpdateType {
   SpawnPhaseEnd,
   GamePaused,
   DonateEvent,
+  GrandStrategy,
 }
 
 export type GameUpdate =
@@ -140,7 +141,23 @@ export type GameUpdate =
   | EmbargoUpdate
   | SpawnPhaseEndUpdate
   | GamePausedUpdate
-  | DonateEventUpdate;
+  | DonateEventUpdate
+  | GrandStrategyUpdate;
+
+/** Once a second per participating nation: industry, equipment, focus. */
+export interface GrandStrategyUpdate {
+  type: GameUpdateType.GrandStrategy;
+  player: PlayerID;
+  equipment: number;
+  /** Share of the nation's troops the stockpile equips, per-mille. */
+  equipped: number;
+  /** Production efficiency, per-mille. */
+  efficiency: number;
+  factories: number;
+  focus: string | null;
+  focusProgress: number;
+  completed: string[];
+}
 
 export interface BonusEventUpdate {
   type: GameUpdateType.BonusEvent;

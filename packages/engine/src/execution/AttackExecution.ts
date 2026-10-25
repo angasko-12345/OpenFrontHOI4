@@ -30,6 +30,7 @@ import type {
   SnapshotReader,
   SnapshotWriter,
 } from "../snapshot/SnapshotContext";
+import { grandStrategyOf } from "./GrandStrategyExecution";
 import { FlatBinaryHeap } from "./utils/FlatBinaryHeap"; // adjust path if needed
 
 const malusForRetreat = 25;
@@ -343,11 +344,24 @@ export class AttackExecution implements Execution {
         continue;
       }
       this.addNeighbors(tileToConquer);
-      const { attackerTroopLoss, defenderTroopLoss, tickFraction } = this.mg
+      const logic = this.mg
         .config()
         .attackLogic(
           this.attackLogicInput(troopCount, tileToConquer, borderSize),
         );
+      let { attackerTroopLoss, defenderTroopLoss } = logic;
+      const { tickFraction } = logic;
+      // Grand Strategy: equipment and doctrine scale player-vs-player losses.
+      const gs = grandStrategyOf(this.mg);
+      if (gs !== null && targetPlayer) {
+        ({ attackerTroopLoss, defenderTroopLoss } = gs.adjustCombat(
+          this._owner,
+          targetPlayer,
+          troopCount,
+          attackerTroopLoss,
+          defenderTroopLoss,
+        ));
+      }
       tickBudget -= tickFraction;
       troopCount -= attackerTroopLoss;
       this.attack.setTroops(troopCount);

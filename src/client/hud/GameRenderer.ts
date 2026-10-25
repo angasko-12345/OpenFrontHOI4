@@ -33,6 +33,7 @@ import { EmojiTable } from "./layers/EmojiTable";
 import { EventsDisplay } from "./layers/EventsDisplay";
 import { GameLeftSidebar } from "./layers/GameLeftSidebar";
 import { GameRightSidebar } from "./layers/GameRightSidebar";
+import { GrandStrategyPanel } from "./layers/GrandStrategyPanel";
 import { HeadsUpMessage } from "./layers/HeadsUpMessage";
 import { ImmunityTimer } from "./layers/ImmunityTimer";
 import { InGamePromo } from "./layers/InGamePromo";
@@ -294,6 +295,15 @@ export function createRenderer(
   spawnTimer.eventBus = eventBus;
   spawnTimer.transformHandler = transformHandler;
 
+  const grandStrategyPanel = document.querySelector(
+    "grand-strategy-panel",
+  ) as GrandStrategyPanel;
+  if (!(grandStrategyPanel instanceof GrandStrategyPanel)) {
+    console.error("grand strategy panel not found");
+  }
+  grandStrategyPanel.game = game;
+  grandStrategyPanel.eventBus = eventBus;
+
   const immunityTimer = document.querySelector(
     "immunity-timer",
   ) as ImmunityTimer;
@@ -353,6 +363,7 @@ export function createRenderer(
       playerPanel,
     ),
     spawnTimer,
+    grandStrategyPanel,
     immunityTimer,
     gameLeftSidebar,
     unitDisplay,

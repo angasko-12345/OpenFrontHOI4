@@ -1,4 +1,5 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
+import type { FocusID } from "@openfront/engine-api/game/GameTypes";
 import {
   AllPlayers,
   GameType,
@@ -176,6 +177,10 @@ export class SendEmbargoIntentEvent implements GameEvent {
   ) {}
 }
 
+export class SendSetFocusIntentEvent implements GameEvent {
+  constructor(public readonly focus: FocusID) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -327,6 +332,9 @@ export class Transport {
     );
     this.subscribe(SendQuickChatEvent, (e) => this.onSendQuickChatIntent(e));
     this.subscribe(SendEmbargoIntentEvent, (e) => this.onSendEmbargoIntent(e));
+    this.subscribe(SendSetFocusIntentEvent, (e) =>
+      this.sendIntent({ type: "set_focus", focus: e.focus }),
+    );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),
     );

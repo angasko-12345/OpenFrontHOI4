@@ -21,6 +21,7 @@ import type {
   SnapshotReader,
   SnapshotWriter,
 } from "../snapshot/SnapshotContext";
+import { grandStrategyOf } from "./GrandStrategyExecution";
 
 const TICKS_PER_CLUSTER_CALC = 20;
 
@@ -124,9 +125,20 @@ export class PlayerExecution implements Execution {
       return;
     }
 
-    const troopInc = this.config.troopIncreaseRate(this.player);
+    const gs = grandStrategyOf(this.mg);
+    let troopInc = this.config.troopIncreaseRate(this.player);
+    if (gs !== null) {
+      troopInc = gs.adjustTroopGrowth(
+        this.player,
+        troopInc,
+        this.config.maxTroops(this.player),
+      );
+    }
     this.player.addTroops(troopInc);
-    const goldFromWorkers = this.config.goldAdditionRate(this.player);
+    let goldFromWorkers = this.config.goldAdditionRate(this.player);
+    if (gs !== null) {
+      goldFromWorkers = gs.adjustGold(this.player, goldFromWorkers);
+    }
     this.player.addGold(goldFromWorkers);
 
     // Record stats

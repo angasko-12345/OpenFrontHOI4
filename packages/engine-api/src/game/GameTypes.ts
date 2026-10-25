@@ -190,6 +190,21 @@ function unitTypeGroup<T extends readonly UnitType[]>(types: T) {
   };
 }
 
+/** Grand Strategy national focus ids (definitions live in engine-lib GrandStrategy). */
+export const FOCUS_IDS = [
+  "industrial_expansion",
+  "conscription",
+  "civilian_economy",
+  "rearmament",
+  "general_mobilization",
+  "war_economy",
+  "mobile_warfare",
+  "defense_in_depth",
+  "fortify_borders",
+  "total_war",
+] as const;
+export type FocusID = (typeof FOCUS_IDS)[number];
+
 export enum UnitType {
   TransportShip = "Transport",
   Warship = "Warship",
