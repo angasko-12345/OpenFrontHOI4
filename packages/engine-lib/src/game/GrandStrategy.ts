@@ -324,13 +324,13 @@ export interface NationGsState {
 export const BASE_EFFICIENCY = 100;
 export const BASE_EFFICIENCY_CAP = 500;
 /** Equipment per military factory per second at 100% efficiency. */
-export const EQUIPMENT_PER_FACTORY = 600;
+export const EQUIPMENT_PER_FACTORY = 1000;
 /** Every nation runs this many factories before it builds any. */
 export const BASE_FACTORIES = 2;
 /** Each built Factory structure level counts as this many military factories. */
 export const FACTORIES_PER_STRUCTURE_LEVEL = 3;
 /** Owned land tiles per extra base factory (bigger countries, more industry). */
-export const TILES_PER_BASE_FACTORY = 2500;
+export const TILES_PER_BASE_FACTORY = 1500;
 /** Stockpile cap as a multiple of max troops. */
 export const STOCKPILE_CAP_MULTIPLE = 2;
 /** At 0% equipped, losses are multiplied by 1 + this (per-mille). */
@@ -660,9 +660,16 @@ const AI_FOCUS_ORDER: Record<AiPersonality, readonly FocusID[]> = {
 
 /** Law categories in the order an AI tries to strengthen them. */
 const AI_LAW_ORDER: Record<AiPersonality, readonly LawCategory[]> = {
-  industrialist: ["economy"],
+  industrialist: ["economy", "conscription"],
   militarist: ["economy", "conscription"],
   defender: ["conscription", "economy"],
+};
+
+/** The strongest law each personality will adopt; past it the costs outweigh the gains. */
+const AI_LAW_CEILING: Record<AiPersonality, readonly LawID[]> = {
+  industrialist: ["extensive_conscription", "war_economy_law"],
+  militarist: ["extensive_conscription", "war_economy_law"],
+  defender: ["service_by_requirement", "war_economy_law"],
 };
 
 export interface AiChoice {
@@ -691,7 +698,12 @@ export function aiChoose(
       category === "conscription" ? CONSCRIPTION_LAW_IDS : ECONOMY_LAW_IDS;
     const current =
       category === "conscription" ? state.conscriptionLaw : state.economyLaw;
-    const next = ids[ids.indexOf(current as never) + 1];
+    const at = ids.indexOf(current as never);
+    const next = ids[at + 1];
+    const ceiling = AI_LAW_CEILING[personality].find((id) =>
+      ids.includes(id as never),
+    );
+    if (ceiling !== undefined && at >= ids.indexOf(ceiling as never)) continue;
     if (next !== undefined && canSetLaw(state, next) === "ok") {
       law = next;
       break;

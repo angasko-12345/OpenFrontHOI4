@@ -291,6 +291,24 @@ describe("Grand Strategy AI", () => {
     },
   );
 
+  test.each(AI_PERSONALITIES)(
+    "%s never pushes a law past its ceiling",
+    (personality) => {
+      const s = newNationState(50_000);
+      for (let i = 0; i < 4000; i++) {
+        s.defendedThisSecond = true; // max war support, every law unlocked
+        const c = aiChoose(s, personality);
+        if (c.focus !== null) startFocus(s, c.focus);
+        if (c.law !== null) setLaw(s, c.law);
+        advanceSecond(s, input);
+      }
+      expect(s.economyLaw).not.toBe("total_mobilization");
+      if (personality !== "defender") {
+        expect(s.conscriptionLaw).not.toBe("service_by_requirement");
+      }
+    },
+  );
+
   test("personalities take different paths", () => {
     const paths = AI_PERSONALITIES.map((p) => {
       const s = newNationState(0);
