@@ -2,16 +2,22 @@ import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import {
   advanceSecond,
+  aiChoose,
+  aiPersonalityFor,
   attackerLossMultiplier,
-  availableFocuses,
+  DEFAULT_CONSCRIPTION_LAW,
+  DEFAULT_ECONOMY_LAW,
+  BASE_WAR_SUPPORT,
   defenderLossMultiplier,
   equippedPermille,
   FocusCheck,
   GsModifiers,
   militaryFactories,
   modifiersOf,
+  LawCheck,
   NationGsState,
   newNationState,
+  setLaw,
   startFocus,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
@@ -72,6 +78,12 @@ export class GrandStrategyExecution implements Execution {
     return startFocus(s, focusId);
   }
 
+  setLaw(player: Player, lawId: string): LawCheck {
+    const s = this.stateOf(player);
+    if (s === null) return "unknown";
+    return setLaw(s, lawId);
+  }
+
   /** Scale troop growth by manpower focuses, never past the troop cap. */
   adjustTroopGrowth(player: Player, base: number, maxTroops: number): number {
     if (base <= 0) return base;
@@ -109,17 +121,20 @@ export class GrandStrategyExecution implements Execution {
       aEquipped,
       as === null ? ZERO_MODIFIERS : modifiersOf(as),
       ds === null ? null : modifiersOf(ds),
+      as === null ? BASE_WAR_SUPPORT : as.warSupport,
     );
     const dMult = defenderLossMultiplier(dEquipped);
     const aLoss = (attackerTroopLoss * aMult) / 1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
     if (as !== null) {
+      as.attackLossesThisSecond += Math.floor(aLoss);
       as.equipment = Math.max(
         0,
         as.equipment - Math.floor((aLoss * aEquipped) / 1000),
       );
     }
     if (ds !== null) {
+      ds.defendedThisSecond = true;
       ds.equipment = Math.max(
         0,
         ds.equipment - Math.floor((dLoss * dEquipped) / 1000),
@@ -137,9 +152,10 @@ export class GrandStrategyExecution implements Execution {
     for (const p of mg.players()) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
-      if (p.type() === PlayerType.Nation && s.focus === null) {
-        const next = availableFocuses(s)[0];
-        if (next !== undefined) startFocus(s, next.id);
+      if (p.type() === PlayerType.Nation) {
+        const choice = aiChoose(s, aiPersonalityFor(p.smallID()));
+        if (choice.focus !== null) startFocus(s, choice.focus);
+        if (choice.law !== null) setLaw(s, choice.law);
       }
       const factoryLevels = p
         .units(UnitType.Factory)
@@ -149,7 +165,10 @@ export class GrandStrategyExecution implements Execution {
         factoryStructureLevels: factoryLevels,
         tilesOwned: p.numTilesOwned(),
         maxTroops: mg.config().maxTroops(p),
+        troops: Math.floor(p.troops()),
       });
+      // Only humans have a HUD to feed; nations would only bloat replays.
+      if (p.type() !== PlayerType.Human) continue;
       mg.addUpdate({
         type: GameUpdateType.GrandStrategy,
         player: p.id(),
@@ -160,11 +179,16 @@ export class GrandStrategyExecution implements Execution {
         focus: s.focus,
         focusProgress: s.focusProgress,
         completed: [...s.completed],
+        politicalPower: Math.floor(s.politicalPower / 1000),
+        warSupport: s.warSupport,
+        conscriptionLaw: s.conscriptionLaw,
+        economyLaw: s.economyLaw,
       });
     }
     // Dead players keep no state.
     for (const id of [...this.states.keys()]) {
-      if (!mg.playerBySmallID(id).isPlayer()) this.states.delete(id);
+      const p = mg.playerBySmallID(id);
+      if (!p.isPlayer() || !p.isAlive()) this.states.delete(id);
     }
   }
 
@@ -187,6 +211,12 @@ export class GrandStrategyExecution implements Execution {
         focus: s.focus,
         focusProgress: s.focusProgress,
         completed: [...s.completed],
+        politicalPower: s.politicalPower,
+        warSupport: s.warSupport,
+        conscriptionLaw: s.conscriptionLaw,
+        economyLaw: s.economyLaw,
+        defendedThisSecond: s.defendedThisSecond,
+        attackLossesThisSecond: s.attackLossesThisSecond,
       })),
     });
   }
@@ -206,6 +236,12 @@ export class GrandStrategyExecution implements Execution {
           focus: n.focus,
           focusProgress: n.focusProgress,
           completed: [...n.completed],
+          politicalPower: n.politicalPower,
+          warSupport: n.warSupport,
+          conscriptionLaw: n.conscriptionLaw,
+          economyLaw: n.economyLaw,
+          defendedThisSecond: n.defendedThisSecond,
+          attackLossesThisSecond: n.attackLossesThisSecond,
         },
       ]),
     );
@@ -222,6 +258,12 @@ const GrandStrategyStateSchema = z.object({
       focus: z.string().nullable(),
       focusProgress: zInt(),
       completed: z.array(z.string()),
+      politicalPower: zInt(),
+      warSupport: zInt(),
+      conscriptionLaw: z.string(),
+      economyLaw: z.string(),
+      defendedThisSecond: z.boolean(),
+      attackLossesThisSecond: zInt(),
     }),
   ),
 });
@@ -229,7 +271,22 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 1,
+  version: 2,
   schema: GrandStrategyStateSchema,
+  migrations: {
+    // v2 added political power, war support and laws.
+    1: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        politicalPower: 0,
+        warSupport: BASE_WAR_SUPPORT,
+        conscriptionLaw: DEFAULT_CONSCRIPTION_LAW,
+        economyLaw: DEFAULT_ECONOMY_LAW,
+        defendedThisSecond: false,
+        attackLossesThisSecond: 0,
+      })),
+    }),
+  },
   cls: () => GrandStrategyExecution,
 });

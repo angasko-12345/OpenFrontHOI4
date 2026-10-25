@@ -16,6 +16,7 @@ import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
 import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
 import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
 import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
+import { GrandStrategyExecutionSnapshot } from "../execution/GrandStrategyExecution";
 import { MarkDisconnectedExecutionSnapshot } from "../execution/MarkDisconnectedExecution";
 import { MirvExecutionSnapshot } from "../execution/MIRVExecution";
 import { MissileSiloExecutionSnapshot } from "../execution/MissileSiloExecution";
@@ -31,10 +32,10 @@ import { RecomputeRailClusterExecutionSnapshot } from "../execution/RecomputeRai
 import { RetreatExecutionSnapshot } from "../execution/RetreatExecution";
 import { SAMLauncherExecutionSnapshot } from "../execution/SAMLauncherExecution";
 import { SAMMissileExecutionSnapshot } from "../execution/SAMMissileExecution";
+import { SetFocusExecutionSnapshot } from "../execution/SetFocusExecution";
+import { SetLawExecutionSnapshot } from "../execution/SetLawExecution";
 import { ShellExecutionSnapshot } from "../execution/ShellExecution";
 import { SpawnExecutionSnapshot } from "../execution/SpawnExecution";
-import { GrandStrategyExecutionSnapshot } from "../execution/GrandStrategyExecution";
-import { SetFocusExecutionSnapshot } from "../execution/SetFocusExecution";
 import { SpawnTimerExecutionSnapshot } from "../execution/SpawnTimerExecution";
 import { TargetPlayerExecutionSnapshot } from "../execution/TargetPlayerExecution";
 import { TradeShipExecutionSnapshot } from "../execution/TradeShipExecution";
@@ -88,6 +89,7 @@ export const EXECUTION_SNAPSHOT_TYPES = [
   RetreatExecutionSnapshot,
   SAMLauncherExecutionSnapshot,
   SetFocusExecutionSnapshot,
+  SetLawExecutionSnapshot,
   SAMMissileExecutionSnapshot,
   ShellExecutionSnapshot,
   SpawnExecutionSnapshot,

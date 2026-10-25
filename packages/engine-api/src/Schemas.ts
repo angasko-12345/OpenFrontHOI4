@@ -6,6 +6,7 @@ import {
   Difficulty,
   Duos,
   FOCUS_IDS,
+  LAW_IDS,
   GameMapSize,
   GameMapType,
   GameMode,
@@ -43,6 +44,7 @@ export type Intent =
   | MarkDisconnectedIntent
   | EmbargoAllIntent
   | SetFocusIntent
+  | SetLawIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
   | KickPlayerIntent
@@ -56,6 +58,7 @@ export type SpawnIntent = z.infer<typeof SpawnIntentSchema>;
 export type BoatAttackIntent = z.infer<typeof BoatAttackIntentSchema>;
 export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
 export type SetFocusIntent = z.infer<typeof SetFocusIntentSchema>;
+export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
 export type AllianceRejectIntent = z.infer<typeof AllianceRejectIntentSchema>;
@@ -480,6 +483,11 @@ export const SetFocusIntentSchema = z.object({
   focus: z.enum(FOCUS_IDS),
 });
 
+export const SetLawIntentSchema = z.object({
+  type: z.literal("set_law"),
+  law: z.enum(LAW_IDS),
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -588,6 +596,7 @@ export const IntentSchema = z.discriminatedUnion("type", [
   EmbargoIntentSchema,
   EmbargoAllIntentSchema,
   SetFocusIntentSchema,
+  SetLawIntentSchema,
   MoveWarshipIntentSchema,
   QuickChatIntentSchema,
   AllianceExtensionIntentSchema,

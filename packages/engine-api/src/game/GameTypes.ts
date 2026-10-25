@@ -202,8 +202,26 @@ export const FOCUS_IDS = [
   "defense_in_depth",
   "fortify_borders",
   "total_war",
+  "political_effort",
+  "war_propaganda",
 ] as const;
 export type FocusID = (typeof FOCUS_IDS)[number];
+
+/** Grand Strategy laws, weakest to strongest within each category. */
+export const CONSCRIPTION_LAW_IDS = [
+  "volunteer_only",
+  "limited_conscription",
+  "extensive_conscription",
+  "service_by_requirement",
+] as const;
+export const ECONOMY_LAW_IDS = [
+  "civilian_economy_law",
+  "partial_mobilization",
+  "war_economy_law",
+  "total_mobilization",
+] as const;
+export const LAW_IDS = [...CONSCRIPTION_LAW_IDS, ...ECONOMY_LAW_IDS] as const;
+export type LawID = (typeof LAW_IDS)[number];
 
 export enum UnitType {
   TransportShip = "Transport",

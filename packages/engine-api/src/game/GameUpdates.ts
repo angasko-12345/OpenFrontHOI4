@@ -157,6 +157,12 @@ export interface GrandStrategyUpdate {
   focus: string | null;
   focusProgress: number;
   completed: string[];
+  /** Political power, whole points (rounded down). */
+  politicalPower: number;
+  /** War support, per-mille. */
+  warSupport: number;
+  conscriptionLaw: string;
+  economyLaw: string;
 }
 
 export interface BonusEventUpdate {

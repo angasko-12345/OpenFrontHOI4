@@ -1,4 +1,4 @@
-import { FocusID } from "@openfront/engine-api/game/GameTypes";
+import { FocusID, LawID } from "@openfront/engine-api/game/GameTypes";
 import {
   GameUpdateType,
   GrandStrategyUpdate,
@@ -6,22 +6,29 @@ import {
 import { renderTroops } from "@openfront/engine-lib/Format";
 import {
   availableFocuses,
+  canSetLaw,
   canStartFocus,
   focusById,
   FOCUS_TREE,
+  LAW_CHANGE_COST,
+  LawCategory,
+  lawsIn,
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import { EventBus } from "@openfront/shared/EventBus";
 import { html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import { Controller } from "../../Controller";
-import { SendSetFocusIntentEvent } from "../../Transport";
+import {
+  SendSetFocusIntentEvent,
+  SendSetLawIntentEvent,
+} from "../../Transport";
 import { GameView } from "../../view";
 
 /**
  * Grand Strategy HUD: the local nation's military industry, equipment
- * stockpile and national focus tree. Reads GrandStrategy updates; picking a
- * focus sends a set_focus intent.
+ * stockpile, national focus tree, political power, war support and laws.
+ * Reads GrandStrategy updates; picking a focus or law sends an intent.
  */
 @customElement("grand-strategy-panel")
 export class GrandStrategyPanel extends LitElement implements Controller {
@@ -32,7 +39,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   /** Whole panel expanded. Phones start collapsed to a small chip. */
   @state() private expanded =
     typeof window === "undefined" || window.innerWidth >= 640;
-  @state() private showFocuses = false;
+  @state() private section: "none" | "focuses" | "laws" = "none";
 
   createRenderRoot() {
     return this;
@@ -54,8 +61,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     this.eventBus.emit(new SendSetFocusIntentEvent(id));
     // On phones, get the list out of the way once a focus is picked.
     if (typeof window !== "undefined" && window.innerWidth < 640) {
-      this.showFocuses = false;
+      this.section = "none";
     }
+  }
+
+  private adopt(id: LawID) {
+    this.eventBus.emit(new SendSetLawIntentEvent(id));
+  }
+
+  private toggle(section: "focuses" | "laws") {
+    this.section = this.section === section ? "none" : section;
   }
 
   render() {
@@ -67,7 +82,14 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       focus: d.focus,
       focusProgress: d.focusProgress,
       completed: d.completed,
+      politicalPower: d.politicalPower * 1000,
+      warSupport: d.warSupport,
+      conscriptionLaw: d.conscriptionLaw,
+      economyLaw: d.economyLaw,
+      defendedThisSecond: false,
+      attackLossesThisSecond: 0,
     };
+    const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
     const canPick = d.focus === null && availableFocuses(state).length > 0;
     const pct = (permille: number) => `${Math.floor(permille / 10)}%`;
@@ -111,12 +133,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="font-bold">Grand Strategy</span>
           <div class="flex gap-1">
             <button
-              class="min-h-9 rounded bg-gray-700 px-3 hover:bg-gray-600 sm:min-h-0 sm:px-2"
-              @click=${() => (this.showFocuses = !this.showFocuses)}
+              class="min-h-9 rounded px-3 sm:min-h-0 sm:px-2 ${
+                this.section === "focuses"
+                  ? "bg-blue-800"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }"
+              @click=${() => this.toggle("focuses")}
             >
-              ${this.showFocuses ? "Hide focuses" : "Focuses"}
+              Focuses
               ${
-                canPick && !this.showFocuses
+                canPick && this.section !== "focuses"
                   ? html`<span
                       class="ml-1 inline-block h-2 w-2 rounded-full bg-yellow-400"
                     ></span>`
@@ -124,11 +150,21 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               }
             </button>
             <button
+              class="min-h-9 rounded px-3 sm:min-h-0 sm:px-2 ${
+                this.section === "laws"
+                  ? "bg-blue-800"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }"
+              @click=${() => this.toggle("laws")}
+            >
+              Laws
+            </button>
+            <button
               class="min-h-9 min-w-9 rounded bg-gray-700 px-2 hover:bg-gray-600 sm:min-h-0 sm:min-w-0"
               aria-label="Minimize"
               @click=${() => {
                 this.expanded = false;
-                this.showFocuses = false;
+                this.section = "none";
               }}
             >
               –
@@ -144,6 +180,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="text-right">${d.factories}</span>
           <span>Efficiency</span>
           <span class="text-right">${pct(d.efficiency)}</span>
+          <span>Political power</span>
+          <span class="text-right">${d.politicalPower}</span>
+          <span>War support</span>
+          <span class="text-right">${pct(d.warSupport)}</span>
         </div>
         <div class="mt-1">
           ${
@@ -161,7 +201,62 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           }
         </div>
         ${
-          this.showFocuses
+          this.section === "laws"
+            ? html`<div class="mt-2 space-y-2">
+                <div class="opacity-70">
+                  Changing a law costs ${LAW_CHANGE_COST / 1000} political
+                  power.
+                </div>
+                ${(["conscription", "economy"] as LawCategory[]).map(
+                  (cat) =>
+                    html`<div>
+                      <div class="font-semibold capitalize">${cat}</div>
+                      ${lawsIn(cat).map((l) => {
+                        const check = canSetLaw(state, l.id);
+                        const active = check === "active";
+                        const enabled = check === "ok";
+                        return html`<button
+                          class="mt-1 block w-full rounded px-3 py-2 text-left sm:px-2 sm:py-1 ${
+                            active
+                              ? "bg-blue-900/80"
+                              : enabled
+                                ? "bg-gray-700 hover:bg-gray-600"
+                                : "bg-gray-900/60 text-gray-500"
+                          }"
+                          ?disabled=${!enabled}
+                          @click=${() => this.adopt(l.id)}
+                        >
+                          <div class="font-semibold">
+                            ${l.name}
+                            ${
+                              active
+                                ? html`<span class="float-right font-normal"
+                                    >Active</span
+                                  >`
+                                : l.minWarSupport > 0
+                                  ? html`<span class="float-right font-normal"
+                                      >WS ${pct(l.minWarSupport)}</span
+                                    >`
+                                  : nothing
+                            }
+                          </div>
+                          <div class="opacity-80">${l.description}</div>
+                        </button>`;
+                      })}
+                    </div>`,
+                )}
+                ${
+                  canAffordLaw
+                    ? nothing
+                    : html`<div class="text-yellow-300">
+                        Not enough political power.
+                      </div>`
+                }
+              </div>`
+            : nothing
+        }
+        ${
+          this.section === "focuses"
             ? html`<div class="mt-2 space-y-1">
                 ${FOCUS_TREE.map((f) => {
                   const check = canStartFocus(state, f.id);

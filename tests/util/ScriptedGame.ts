@@ -231,6 +231,8 @@ function queuedIntent(game: Game, p: Player, tick: number): Intent | null {
     },
     { type: "mark_disconnected", isDisconnected: false },
     { type: "toggle_pause", paused: false },
+    { type: "set_focus", focus: "industrial_expansion" },
+    { type: "set_law", law: "volunteer_only" },
   ];
   return queued[(tick - 20) / 2] ?? null;
 }

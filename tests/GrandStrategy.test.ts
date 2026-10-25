@@ -27,7 +27,12 @@ import { Game, Player } from "@openfront/engine/game/Game";
 import { setup } from "./util/Setup";
 import { diffSnapshots, roundTrip } from "./util/Snapshot";
 
-const input = { factoryStructureLevels: 0, tilesOwned: 0, maxTroops: 100_000 };
+const input = {
+  factoryStructureLevels: 0,
+  tilesOwned: 0,
+  maxTroops: 100_000,
+  troops: 50_000,
+};
 
 describe("GrandStrategy rules", () => {
   test("every focus prerequisite and exclusive exists", () => {
@@ -47,7 +52,9 @@ describe("GrandStrategy rules", () => {
     const r = advanceSecond(s, input);
     expect(r.completedFocus).toBe("industrial_expansion");
     expect(s.focus).toBeNull();
-    expect(modifiersOf(s).production).toBe(150);
+    // +15% on top of the default civilian economy law's -15%.
+    expect(modifiersOf(s).production).toBe(150 - 150);
+    expect(s.completed).toEqual(["industrial_expansion"]);
   });
 
   test("prerequisites and mutual exclusion", () => {

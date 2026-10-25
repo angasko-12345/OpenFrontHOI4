@@ -20,7 +20,6 @@ import { DonateTroopsExecution } from "./DonateTroopExecution";
 import { EmbargoAllExecution } from "./EmbargoAllExecution";
 import { EmbargoExecution } from "./EmbargoExecution";
 import { EmojiExecution } from "./EmojiExecution";
-import { SetFocusExecution } from "./SetFocusExecution";
 import { MarkDisconnectedExecution } from "./MarkDisconnectedExecution";
 import { MoveWarshipExecution } from "./MoveWarshipExecution";
 import { NationExecution } from "./NationExecution";
@@ -28,6 +27,8 @@ import { NoOpExecution } from "./NoOpExecution";
 import { PauseExecution } from "./PauseExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
+import { SetFocusExecution } from "./SetFocusExecution";
+import { SetLawExecution } from "./SetLawExecution";
 import { SpawnExecution } from "./SpawnExecution";
 import { TargetPlayerExecution } from "./TargetPlayerExecution";
 import { TransportShipExecution } from "./TransportShipExecution";
@@ -116,6 +117,8 @@ export class Executor {
         return new EmbargoAllExecution(player, intent.action);
       case "set_focus":
         return new SetFocusExecution(player, intent.focus);
+      case "set_law":
+        return new SetLawExecution(player, intent.law);
       case "build_unit":
         return new ConstructionExecution(
           player,
