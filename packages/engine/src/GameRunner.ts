@@ -191,7 +191,9 @@ export class GameRunner {
       );
     }
     this.game.addExecution(new WinCheckExecution());
-    this.game.addExecution(new GrandStrategyExecution());
+    if (this.game.config().grandStrategyEnabled()) {
+      this.game.addExecution(new GrandStrategyExecution());
+    }
     if (this.game.config().doomsdayClockConfig().enabled) {
       this.game.addExecution(new DoomsdayClockExecution());
     }

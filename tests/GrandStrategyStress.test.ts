@@ -473,3 +473,20 @@ describe("GrandStrategy in a full scripted game", { timeout: 300_000 }, () => {
     expect(progressed).toBe(nations);
   });
 });
+
+describe("Grand Strategy lobby toggle", { timeout: 120_000 }, () => {
+  test("grandStrategy: false runs a classic game with no GS layer", async () => {
+    const start = scriptedGameStart({ grandStrategy: false });
+    const runner = await createScriptedRunner("world", start);
+    expect(runner.game.config().grandStrategyEnabled()).toBe(false);
+    while (runner.game.ticks() < 60) stepScripted(runner);
+    expect(grandStrategyOf(runner.game)).toBeNull();
+  });
+
+  test("absent setting means on", async () => {
+    const runner = await createScriptedRunner("world", scriptedGameStart());
+    expect(runner.game.config().grandStrategyEnabled()).toBe(true);
+    stepScripted(runner);
+    expect(grandStrategyOf(runner.game)).not.toBeNull();
+  });
+});

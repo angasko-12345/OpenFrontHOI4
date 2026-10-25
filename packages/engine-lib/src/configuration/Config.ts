@@ -179,6 +179,11 @@ export class Config {
   isUnitDisabled(unitType: UnitType): boolean {
     return this._gameConfig.disabledUnits?.includes(unitType) ?? false;
   }
+  /** Grand Strategy layer (industry, focuses, laws). On unless turned off. */
+  grandStrategyEnabled(): boolean {
+    return this._gameConfig.grandStrategy !== false;
+  }
+
   instantBuild(): boolean {
     return this._gameConfig.instantBuild;
   }

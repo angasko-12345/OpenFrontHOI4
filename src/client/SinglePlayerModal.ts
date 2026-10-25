@@ -118,6 +118,7 @@ const DEFAULT_OPTIONS = {
   maxTimer: false,
   maxTimerValue: undefined as number | undefined,
   instantBuild: false,
+  grandStrategy: true,
   randomSpawn: false,
   useRandomMap: false,
   gameMode: GameMode.FFA,
@@ -196,6 +197,7 @@ export class SinglePlayerModal extends BaseModal {
     DEFAULT_OPTIONS.maxTimerValue;
   @state() private instantBuild: boolean = DEFAULT_OPTIONS.instantBuild;
   @state() private randomSpawn: boolean = DEFAULT_OPTIONS.randomSpawn;
+  @state() private grandStrategy: boolean = DEFAULT_OPTIONS.grandStrategy;
   @state() private useRandomMap: boolean = DEFAULT_OPTIONS.useRandomMap;
   @state() private gameMode: GameMode = DEFAULT_OPTIONS.gameMode;
   @state() private teamCount: TeamCountConfig = DEFAULT_OPTIONS.teamCount;
@@ -552,6 +554,10 @@ export class SinglePlayerModal extends BaseModal {
                 },
                 toggles: [
                   {
+                    labelKey: "game_settings.grand_strategy",
+                    checked: this.grandStrategy,
+                  },
+                  {
                     labelKey: "game_settings.instant_build",
                     checked: this.instantBuild,
                   },
@@ -640,6 +646,7 @@ export class SinglePlayerModal extends BaseModal {
       this.compactMap !== DEFAULT_OPTIONS.compactMap ||
       this.maxTimer !== DEFAULT_OPTIONS.maxTimer ||
       this.instantBuild !== DEFAULT_OPTIONS.instantBuild ||
+      this.grandStrategy !== DEFAULT_OPTIONS.grandStrategy ||
       this.randomSpawn !== DEFAULT_OPTIONS.randomSpawn ||
       this.gameMode !== DEFAULT_OPTIONS.gameMode ||
       this.goldMultiplier !== DEFAULT_OPTIONS.goldMultiplier ||
@@ -714,6 +721,7 @@ export class SinglePlayerModal extends BaseModal {
     this.maxTimer = DEFAULT_OPTIONS.maxTimer;
     this.maxTimerValue = DEFAULT_OPTIONS.maxTimerValue;
     this.instantBuild = DEFAULT_OPTIONS.instantBuild;
+    this.grandStrategy = DEFAULT_OPTIONS.grandStrategy;
     this.randomSpawn = DEFAULT_OPTIONS.randomSpawn;
     this.teamCount = DEFAULT_OPTIONS.teamCount;
     this.disabledUnits = [...DEFAULT_OPTIONS.disabledUnits];
@@ -813,6 +821,9 @@ export class SinglePlayerModal extends BaseModal {
         break;
       case "game_settings.random_spawn":
         this.randomSpawn = checked;
+        break;
+      case "game_settings.grand_strategy":
+        this.grandStrategy = checked;
         break;
       case "game_settings.infinite_gold":
         this.infiniteGold = checked;
@@ -1136,6 +1147,7 @@ export class SinglePlayerModal extends BaseModal {
             donateTroops: this.gameMode === GameMode.Team,
             infiniteTroops: this.infiniteTroops,
             instantBuild: this.instantBuild,
+            grandStrategy: this.grandStrategy,
             randomSpawn: this.randomSpawn,
             disabledUnits: this.disabledUnits.filter((unit): unit is UnitType =>
               Object.values(UnitType).includes(unit),

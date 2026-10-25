@@ -45,6 +45,13 @@ test.skipIf(!process.env.PT_RUN)(
     if (process.env.PT_SEED) start.gameID = process.env.PT_SEED;
     const runner = await createScriptedRunner("world", start);
     const g = runner.game;
+    if (process.env.PT_GS === "off") {
+      // Control: laws and focuses must not move the troop cap either.
+      const cfg = g.config();
+      const install = cfg.setTroopCapModifier.bind(cfg);
+      install(null);
+      cfg.setTroopCapModifier = () => install(null);
+    }
     const out: unknown[] = [];
     const END = Number(process.env.PT_TICKS ?? 9000);
     while (g.ticks() < END) {

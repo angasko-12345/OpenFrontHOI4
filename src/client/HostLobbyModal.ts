@@ -89,6 +89,7 @@ export class HostLobbyModal extends BaseModal {
   @state() private startDelayValue: number | undefined = 3;
   @state() private instantBuild: boolean = false;
   @state() private randomSpawn: boolean = false;
+  @state() private grandStrategy: boolean = true;
   @state() private compactMap: boolean = false;
   @state() private goldMultiplier: boolean = false;
   @state() private goldMultiplierValue: number | undefined = undefined;
@@ -678,6 +679,10 @@ export class HostLobbyModal extends BaseModal {
                 },
                 toggles: [
                   {
+                    labelKey: "game_settings.grand_strategy",
+                    checked: this.grandStrategy,
+                  },
+                  {
                     labelKey: "game_settings.instant_build",
                     checked: this.instantBuild,
                   },
@@ -1043,6 +1048,7 @@ export class HostLobbyModal extends BaseModal {
     this.playerLimitLoadedFor = null;
     this.startDelayValue = 3;
     this.instantBuild = false;
+    this.grandStrategy = true;
     this.randomSpawn = false;
     this.compactMap = false;
     this.useRandomMap = false;
@@ -1141,6 +1147,10 @@ export class HostLobbyModal extends BaseModal {
     switch (labelKey) {
       case "game_settings.instant_build":
         this.handleInstantBuildChange(checked);
+        break;
+      case "game_settings.grand_strategy":
+        this.grandStrategy = checked;
+        this.putGameConfig();
         break;
       case "game_settings.random_spawn":
         this.handleRandomSpawnChange(checked);
@@ -1666,6 +1676,7 @@ export class HostLobbyModal extends BaseModal {
             infiniteTroops: this.infiniteTroops,
             donateTroops: this.donateTroops,
             instantBuild: this.instantBuild,
+            grandStrategy: this.grandStrategy,
             randomSpawn: this.randomSpawn,
             gameMode: this.gameMode,
             disabledUnits: this.disabledUnits,

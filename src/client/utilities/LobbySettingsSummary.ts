@@ -69,6 +69,11 @@ export function notableLobbySettings(
       label: translateText("game_settings.infinite_gold"),
       value: enabled,
     });
+  if (c.grandStrategy === false)
+    items.push({
+      label: translateText("game_settings.grand_strategy"),
+      value: disabled,
+    });
   if (c.instantBuild)
     items.push({
       label: translateText("game_settings.instant_build"),
