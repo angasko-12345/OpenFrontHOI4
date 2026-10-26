@@ -51,7 +51,7 @@ export const CATCH_UP_SHARE = 500;
 
 export const ATOMIC_PROJECT: TechID = "atomic_project";
 /** Seconds of one slot the atomic project takes. */
-export const ATOMIC_PROJECT_SECONDS = 240;
+export const ATOMIC_PROJECT_SECONDS = 120;
 /** Era the atomic project unlocks in. */
 export const ATOMIC_PROJECT_ERA = 2;
 

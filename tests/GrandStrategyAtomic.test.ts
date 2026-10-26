@@ -57,7 +57,7 @@ const ERA2_ALL = TECHS.filter(
 const fresh = (): ResearchState => ({ researched: [], research: [] });
 
 describe("Atomic project rules", () => {
-  test("is an era 2 world project of 240 s", () => {
+  test("is an era 2 world project", () => {
     const t = techById(ATOMIC_PROJECT)!;
     expect(t.era).toBe(ATOMIC_PROJECT_ERA);
     expect(t.era).toBe(2);
