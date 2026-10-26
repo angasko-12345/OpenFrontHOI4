@@ -26,10 +26,7 @@ import {
   lawsIn,
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
-import {
-  CAPITULATE_PERMILLE,
-  TRUCE_SECONDS,
-} from "@openfront/engine-lib/game/GrandStrategyPeace";
+import { CAPITULATE_PERMILLE } from "@openfront/engine-lib/game/GrandStrategyPeace";
 import {
   ATOMIC_PROJECT_ERA,
   canResearch,
@@ -57,6 +54,7 @@ import {
   SendSetLawIntentEvent,
 } from "../../Transport";
 import { GameView } from "../../view";
+import { renderTruces, truceRulesNote } from "./GrandStrategyDiplomacy";
 
 /**
  * Grand Strategy HUD: the local nation's military industry, equipment
@@ -135,6 +133,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
 
   private peace(id: PlayerID) {
     this.eventBus.emit(new SendPeaceIntentEvent(id));
+  }
+
+  private breakTruce(id: PlayerID) {
+    this.eventBus.emit(new SendPeaceIntentEvent(id, "break"));
   }
 
   private name(id: string): string {
@@ -728,7 +730,6 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const wars = d.wars ?? [];
     const offers = d.peaceOffers ?? [];
     const toMe = d.peaceOffersToMe ?? [];
-    const truces = d.truces ?? [];
     const offered = new Map(offers.map((o) => [o.target, o.seconds]));
     const mins = (s: number) =>
       s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
@@ -788,25 +789,17 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               </div>`;
             })
       }
-      ${
-        truces.length > 0
-          ? html`<div class="font-semibold">Truces</div>
-              ${truces.map(
-                (t) =>
-                  html`<div class="flex justify-between gap-2">
-                    <span class="min-w-0 truncate">${this.name(t.target)}</span>
-                    <span class="shrink-0">${mins(t.seconds)}</span>
-                  </div>`,
-              )}`
-          : nothing
-      }
+      ${renderTruces(
+        d,
+        (id) => this.name(id),
+        (id) => this.breakTruce(id),
+      )}
       <div class="opacity-60">
         Weariness grows with troops lost attacking, land lost and long wars,
         fastest for large, over-extended nations; it raises attack losses and
         cuts political power and war support. Below ${CAPITULATE_PERMILLE / 10}%
         of your peak land (${d.peakTiles ?? 0} tiles) while at war you
-        capitulate. Peace and capitulation bring a ${TRUCE_SECONDS / 60}-minute
-        truce: no attacks either way, land stays where it is.
+        capitulate. ${truceRulesNote()}
       </div>
     </div>`;
   }
