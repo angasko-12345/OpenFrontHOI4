@@ -83,10 +83,19 @@ export class GrandStrategyExecution implements Execution {
   private states = new Map<number, NationGsState>();
   private wars = new Map<number, NationWarState>();
   /**
-   * The M4 war layer (occupation, supply, war goals, coalition). Only the
-   * balance harness turns it off, to measure it; not saved in snapshots.
+   * Turns the M4 war layer (occupation, supply, war goals, coalition) off.
+   * Only the balance harness uses it, to measure M4; not saved in snapshots.
+   * Absent means on: restored instances skip field initializers.
    */
-  warLayer = true;
+  private warLayerOff?: boolean;
+
+  get warLayer(): boolean {
+    return this.warLayerOff !== true;
+  }
+
+  set warLayer(on: boolean) {
+    this.warLayerOff = !on;
+  }
   /** Small id of the coalition target, if one nation dominates. */
   private coalitionLeader: number | null = null;
 
@@ -129,6 +138,8 @@ export class GrandStrategyExecution implements Execution {
     if (player.type() === PlayerType.Bot) return null;
     let w = this.wars.get(player.smallID());
     if (w === undefined) {
+      // War state is saved alongside the nation state, so make sure one exists.
+      this.stateOf(player);
       w = newWarState();
       this.wars.set(player.smallID(), w);
     }
