@@ -804,10 +804,9 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         Weariness grows with troops lost attacking, land lost and long wars,
         fastest for large, over-extended nations; it raises attack losses and
         cuts political power and war support. Below ${CAPITULATE_PERMILLE / 10}%
-        of your peak land (${renderTroops(d.peakTiles ?? 0)} tiles) while at war
-        you capitulate. Peace and capitulation bring a
-        ${TRUCE_SECONDS / 60}-minute truce: no attacks either way, land stays
-        where it is.
+        of your peak land (${d.peakTiles ?? 0} tiles) while at war you
+        capitulate. Peace and capitulation bring a ${TRUCE_SECONDS / 60}-minute
+        truce: no attacks either way, land stays where it is.
       </div>
     </div>`;
   }
