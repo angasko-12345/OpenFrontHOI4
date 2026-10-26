@@ -1,8 +1,6 @@
 import {
-  ADVISOR_IDS,
-  AdvisorID,
-  DECISION_IDS,
-  DecisionID,
+  GS_ACTION_IDS,
+  GsActionID,
 } from "@openfront/engine-api/game/GameTypes";
 import { zPlayerRef } from "@openfront/engine-lib/snapshot/SnapshotType";
 import { z } from "zod";
@@ -19,7 +17,7 @@ import { grandStrategyOf } from "./GrandStrategyExecution";
 export class GsActionExecution implements Execution {
   constructor(
     private player: Player,
-    private action: DecisionID | AdvisorID,
+    private action: GsActionID,
   ) {}
 
   init(mg: Game, _: number): void {
@@ -58,7 +56,7 @@ export class GsActionExecution implements Execution {
 
 const GsActionStateSchema = z.object({
   player: zPlayerRef(),
-  action: z.enum([...DECISION_IDS, ...ADVISOR_IDS]),
+  action: z.enum(GS_ACTION_IDS),
 });
 type GsActionState = z.infer<typeof GsActionStateSchema>;
 

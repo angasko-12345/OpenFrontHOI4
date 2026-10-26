@@ -1,7 +1,6 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
-  AdvisorID,
-  DecisionID,
+  GsActionID,
   PlayerType,
   UnitType,
 } from "@openfront/engine-api/game/GameTypes";
@@ -9,6 +8,9 @@ import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import {
   ActionCheck,
   advanceSecond,
+  aiProductionLine,
+  artilleryLossPermille,
+  LINE_SHARE,
   aiChoose,
   AI_PP_RESERVE,
   aiPersonalityFor,
@@ -115,7 +117,7 @@ export class GrandStrategyExecution implements Execution {
    */
   private ablated?: Set<string>;
 
-  ablate(part: "civgold" | "trade" | "depai"): void {
+  ablate(part: "civgold" | "trade" | "depai" | "artillery"): void {
     (this.ablated ??= new Set()).add(part);
   }
 
@@ -255,7 +257,7 @@ export class GrandStrategyExecution implements Execution {
     return setLaw(s, lawId);
   }
 
-  takeAction(player: Player, id: DecisionID | AdvisorID): ActionCheck {
+  takeAction(player: Player, id: GsActionID): ActionCheck {
     const s = this.stateOf(player);
     if (s === null) return "unknown";
     return takeAction(s, id);
@@ -319,9 +321,18 @@ export class GrandStrategyExecution implements Execution {
               this.coalitionLeader === defender.smallID(),
             inSupply: tile === undefined || this.inSupply(attacker, tile),
           });
+    const aGuns =
+      as === null || !this.on("artillery")
+        ? 0
+        : equippedPermille(as.artillery, attackTroops);
+    const gunMult = artilleryLossPermille(aGuns);
     const aLoss =
       (attackerTroopLoss *
-        Math.floor((Math.floor((aMult * warMult) / 1000) * oilMult) / 1000)) /
+        Math.floor(
+          (Math.floor((Math.floor((aMult * warMult) / 1000) * oilMult) / 1000) *
+            gunMult) /
+            1000,
+        )) /
       1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
     if (as !== null) {
@@ -329,6 +340,10 @@ export class GrandStrategyExecution implements Execution {
       as.equipment = Math.max(
         0,
         as.equipment - Math.floor((aLoss * aEquipped) / 1000),
+      );
+      as.artillery = Math.max(
+        0,
+        as.artillery - Math.floor((aLoss * aGuns) / 1000),
       );
     }
     if (ds !== null) {
@@ -384,6 +399,17 @@ export class GrandStrategyExecution implements Execution {
       s.steelDeposits = h?.steel ?? 0;
       s.oilDeposits = h?.oil ?? 0;
       s.milFactories = militaryFactories(factoryLevels, p.numTilesOwned());
+      if (p.type() === PlayerType.Nation) {
+        s.artilleryShare = this.on("artillery")
+          ? (LINE_SHARE[
+              aiProductionLine(
+                s,
+                aiPersonalityFor(p.smallID()),
+                mg.config().maxTroops(p),
+              )
+            ] ?? 0)
+          : 0;
+      }
       const cityLevels = p
         .units(UnitType.City)
         .filter((u) => !u.isUnderConstruction())
@@ -431,6 +457,9 @@ export class GrandStrategyExecution implements Execution {
         civFree: freeCivFactories(s),
         importSteel: s.importSteel,
         importOil: s.importOil,
+        artillery: s.artillery,
+        artilleryShare: s.artilleryShare,
+        artillerySupport: equippedPermille(s.artillery, p.troops()),
         steel: res.steel,
         steelNeeded: res.steelNeeded,
         oil: res.oil,
@@ -603,6 +632,8 @@ export class GrandStrategyExecution implements Execution {
         civFactories: s.civFactories,
         importSteel: s.importSteel,
         importOil: s.importOil,
+        artillery: s.artillery,
+        artilleryShare: s.artilleryShare,
         ...warSnapshot(this.wars.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
@@ -635,6 +666,8 @@ export class GrandStrategyExecution implements Execution {
           civFactories: n.civFactories,
           importSteel: n.importSteel,
           importOil: n.importOil,
+          artillery: n.artillery,
+          artilleryShare: n.artilleryShare,
         },
       ]),
     );
@@ -703,6 +736,8 @@ const GrandStrategyStateSchema = z.object({
       civFactories: zInt(),
       importSteel: zInt(),
       importOil: zInt(),
+      artillery: zInt(),
+      artilleryShare: zInt(),
       occupied: zInt(),
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
@@ -714,9 +749,14 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 6,
+  version: 7,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v7 added artillery and production lines.
+    6: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({ ...n, artillery: 0, artilleryShare: 0 })),
+    }),
     // v6 added civilian factories and trade (recomputed at the next second).
     5: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

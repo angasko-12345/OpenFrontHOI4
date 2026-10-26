@@ -452,6 +452,10 @@ export interface NationGsState {
   civFactories: number;
   importSteel: number;
   importOil: number;
+  /** M5 stage C: artillery stock, counted in troops it supports. */
+  artillery: number;
+  /** M5 stage C: share of military output on artillery, per-mille. */
+  artilleryShare: number;
 }
 
 export interface TimedEntry {
@@ -515,6 +519,8 @@ export function newNationState(startEquipment: number): NationGsState {
     civFactories: 0,
     importSteel: 0,
     importOil: 0,
+    artillery: 0,
+    artilleryShare: 0,
   };
 }
 
@@ -640,6 +646,11 @@ export function canTakeAction(state: NationGsState, id: string): ActionCheck {
 
 /** Take a decision or hire an advisor, paying its political power. */
 export function takeAction(state: NationGsState, id: string): ActionCheck {
+  const line = LINE_SHARE[id];
+  if (line !== undefined) {
+    state.artilleryShare = line;
+    return "ok";
+  }
   const check = canTakeAction(state, id);
   if (check !== "ok") return check;
   const d = DECISION_BY_ID.get(id);
@@ -772,9 +783,16 @@ export function advanceSecond(
       (1000 + mods.production)) /
       1_000_000,
   );
-  const produced = Math.max(
+  const total = Math.max(
     0,
     Math.floor((base * (input.productionPermille ?? 1000)) / 1000),
+  );
+  const share = clampPermille(state.artilleryShare ?? 0);
+  const toGuns = Math.floor((total * share) / 1000);
+  const produced = total - toGuns;
+  state.artillery = Math.min(
+    Math.max(0, Math.floor(input.maxTroops)),
+    (state.artillery ?? 0) + Math.floor(toGuns / ARTILLERY_COST),
   );
   const stockCap = Math.floor(input.maxTroops * STOCKPILE_CAP_MULTIPLE);
   const before = state.equipment;
@@ -823,6 +841,50 @@ export function attackerLossMultiplier(
   const a = Math.floor((shortage * doctrine) / 1000);
   const b = Math.floor((a * defense) / 1000);
   return Math.floor((b * morale) / 1000);
+}
+
+// ---------------------------------------------------------------------------
+// M5 stage C: production lines and artillery.
+//
+// A nation splits military output between infantry equipment and artillery.
+// Artillery is stocked in "troops supported" (like equipment, capped at max
+// troops); each unit costs ARTILLERY_COST equipment of output. An attack
+// with full artillery support takes ARTILLERY_LOSS_CUT fewer losses, and
+// guns are lost with the troops they support.
+
+/** Equipment of output per troop of artillery support. */
+export const ARTILLERY_COST = 4;
+/** Attacker losses cut at full artillery support, per-mille. */
+export const ARTILLERY_LOSS_CUT = 150;
+
+/** Artillery share each production line sets, per-mille. */
+export const LINE_SHARE: Readonly<Record<string, number>> = {
+  line_infantry: 0,
+  line_balanced: 250,
+  line_artillery: 500,
+};
+
+/** Attacker loss multiplier (per-mille) from artillery support. */
+export function artilleryLossPermille(supported: number): number {
+  return (
+    1000 - Math.floor((clampPermille(supported) * ARTILLERY_LOSS_CUT) / 1000)
+  );
+}
+
+/**
+ * AI production line: guns once the infantry stockpile covers the army,
+ * militarists earlier.
+ */
+export function aiProductionLine(
+  state: NationGsState,
+  personality: AiPersonality,
+  maxTroops: number,
+): string {
+  if (state.equipment >= Math.floor(maxTroops)) return "line_artillery";
+  if (personality === "militarist" && state.equipment * 2 >= maxTroops) {
+    return "line_balanced";
+  }
+  return "line_infantry";
 }
 
 /** Defender loss multiplier, per-mille, from its own equipment shortage. */

@@ -5,9 +5,8 @@ import {
   AllPlayers,
   Difficulty,
   Duos,
-  ADVISOR_IDS,
-  DECISION_IDS,
   FOCUS_IDS,
+  GS_ACTION_IDS,
   LAW_IDS,
   GameMapSize,
   GameMapType,
@@ -499,7 +498,7 @@ export const SetLawIntentSchema = z.object({
 /** Spend political power on a decision or an advisor. */
 export const GsActionIntentSchema = z.object({
   type: z.literal("gs_action"),
-  action: z.enum([...DECISION_IDS, ...ADVISOR_IDS]),
+  action: z.enum(GS_ACTION_IDS),
 });
 
 /** Start justifying a war goal against another player. */

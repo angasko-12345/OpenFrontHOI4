@@ -175,6 +175,11 @@ export interface GrandStrategyUpdate {
   civFree: number;
   importSteel: number;
   importOil: number;
+  /** M5 stage C: artillery stock (troops supported) and its output share. */
+  artillery: number;
+  artilleryShare: number;
+  /** Share of the army artillery supports, per-mille. */
+  artillerySupport: number;
   /** M5: steel and oil available per second (imports included), and need. */
   steel: number;
   steelNeeded: number;

@@ -1,10 +1,9 @@
 import {
-  AdvisorID,
-  DecisionID,
   FocusID,
   LawID,
   PlayerID,
   PlayerType,
+  GsActionID,
 } from "@openfront/engine-api/game/GameTypes";
 import {
   GameUpdateType,
@@ -107,7 +106,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     this.eventBus.emit(new SendSetLawIntentEvent(id));
   }
 
-  private act(id: DecisionID | AdvisorID) {
+  private act(id: GsActionID) {
     this.eventBus.emit(new SendGsActionIntentEvent(id));
   }
 
@@ -179,6 +178,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       civFactories: d.civFactories,
       importSteel: d.importSteel,
       importOil: d.importOil,
+      artillery: d.artillery,
+      artilleryShare: d.artilleryShare,
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -312,6 +313,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
                   >`
               : nothing
           }
+          <span>Artillery</span>
+          <span class="text-right">${pct(d.artillerySupport)}</span>
           <span>Steel</span>
           <span
             class="text-right ${d.steel < d.steelNeeded ? "text-red-400" : ""}"
@@ -339,6 +342,29 @@ export class GrandStrategyPanel extends LitElement implements Controller {
                   >`
               : nothing
           }
+        </div>
+        <div class="mt-1 flex items-center gap-1">
+          <span class="mr-1">Production</span>
+          ${(
+            [
+              ["line_infantry", "Infantry", 0],
+              ["line_balanced", "Mixed", 250],
+              ["line_artillery", "Artillery", 500],
+            ] as const
+          ).map(
+            ([id, label, share]) =>
+              html`<button
+                class="min-h-9 flex-1 rounded px-1 sm:min-h-0 ${
+                  d.artilleryShare === share
+                    ? "bg-blue-700"
+                    : "bg-gray-700 hover:bg-gray-600"
+                }"
+                title="${share / 10}% of military output on artillery"
+                @click=${() => this.act(id)}
+              >
+                ${label}
+              </button>`,
+          )}
         </div>
         <div class="mt-1">
           ${

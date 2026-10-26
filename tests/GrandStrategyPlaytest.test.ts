@@ -44,10 +44,10 @@ test.skipIf(!process.env.PT_RUN)(
     // PT_GS=nowar: Grand Strategy on, but the M4 war layer (occupation,
     // supply, war goals, coalition) off, to measure M4 on its own.
     const noWar = process.env.PT_GS === "nowar";
-    // PT_GS=nocivgold / notrade / nodepai: one M5 stage B part off.
-    const ablate = /^no(civgold|trade|depai)$/.exec(
+    // PT_GS=nocivgold / notrade / nodepai / noartillery: one M5 part off.
+    const ablate = /^no(civgold|trade|depai|artillery)$/.exec(
       process.env.PT_GS ?? "",
-    )?.[1] as "civgold" | "trade" | "depai" | undefined;
+    )?.[1] as "civgold" | "trade" | "depai" | "artillery" | undefined;
     while (g.ticks() < END) {
       stepScripted(runner);
       if (noWar) {
@@ -94,6 +94,8 @@ test.skipIf(!process.env.PT_RUN)(
           res: s ? [s.steelDeposits, s.oilDeposits, s.milFactories] : null,
           // M5 stage B: civilian factories, steel and oil imported.
           civ: s ? [s.civFactories, s.importSteel, s.importOil] : null,
+          // M5 stage C: artillery stock and share.
+          guns: s ? [s.artillery, s.artilleryShare] : null,
         };
       });
       out.push({

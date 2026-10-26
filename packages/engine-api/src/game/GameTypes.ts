@@ -240,6 +240,22 @@ export const ADVISOR_IDS = [
 ] as const;
 export type AdvisorID = (typeof ADVISOR_IDS)[number];
 
+/** Grand Strategy production lines: the share of military output on artillery. */
+export const PRODUCTION_LINE_IDS = [
+  "line_infantry",
+  "line_balanced",
+  "line_artillery",
+] as const;
+export type ProductionLineID = (typeof PRODUCTION_LINE_IDS)[number];
+
+/** Everything the `gs_action` intent can carry. */
+export const GS_ACTION_IDS = [
+  ...DECISION_IDS,
+  ...ADVISOR_IDS,
+  ...PRODUCTION_LINE_IDS,
+] as const;
+export type GsActionID = DecisionID | AdvisorID | ProductionLineID;
+
 export enum UnitType {
   TransportShip = "Transport",
   Warship = "Warship",

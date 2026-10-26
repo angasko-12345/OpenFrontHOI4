@@ -23,11 +23,22 @@ import {
   troopCapModifier,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  aiProductionLine,
+  ARTILLERY_COST,
+  ARTILLERY_LOSS_CUT,
+  artilleryLossPermille,
+  LINE_SHARE,
+  newNationState as newState,
+  advanceSecond as advance,
+  takeAction as take,
+} from "@openfront/engine-lib/game/GrandStrategy";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
   GrandStrategyExecution,
   grandStrategyOf,
 } from "@openfront/engine/execution/GrandStrategyExecution";
+import { GsActionExecution } from "@openfront/engine/execution/GsActionExecution";
 import { SetFocusExecution } from "@openfront/engine/execution/SetFocusExecution";
 import { SpawnExecution } from "@openfront/engine/execution/SpawnExecution";
 import { Game, Player } from "@openfront/engine/game/Game";
@@ -175,6 +186,54 @@ describe("GrandStrategyExecution", () => {
     expect(bare.attackerTroopLoss).toBe(200);
   });
 
+  test("artillery cuts attacker losses and is lost with them", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
+    const st = gs.stateOf(a)!;
+    st.equipment = 1_000_000;
+    st.artillery = 0;
+    const bare = gs.adjustCombat(a, b, 1000, 100, 10);
+    st.artillery = 1000;
+    const guns = gs.adjustCombat(a, b, 1000, 100, 10);
+    expect(guns.attackerTroopLoss).toBeLessThan(bare.attackerTroopLoss);
+    expect(st.artillery).toBeLessThan(1000);
+    // Half support, half the cut.
+    st.artillery = 500;
+    const half = gs.adjustCombat(a, b, 1000, 100, 10);
+    expect(half.attackerTroopLoss).toBeGreaterThan(guns.attackerTroopLoss);
+    expect(half.attackerTroopLoss).toBeLessThan(bare.attackerTroopLoss);
+  });
+
+  test("gs_action production line moves output into artillery", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    game.addExecution(new GsActionExecution(a, "line_artillery"));
+    seconds(1);
+    const st = gs.stateOf(a)!;
+    expect(st.artilleryShare).toBe(500);
+    const g0 = st.artillery;
+    seconds(10);
+    expect(st.artillery).toBeGreaterThan(g0);
+    game.addExecution(new GsActionExecution(a, "line_infantry"));
+    seconds(1);
+    expect(st.artilleryShare).toBe(0);
+    const g1 = st.artillery;
+    seconds(5);
+    expect(st.artillery).toBe(g1);
+  });
+
+  test("artillery state survives a snapshot round trip", async () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    gs.stateOf(a)!.artillery = 321;
+    gs.stateOf(a)!.artilleryShare = 250;
+    const { restored } = await roundTrip(game, "ocean_and_land");
+    const rs = grandStrategyOf(restored)!.stateOf(restored.player(a.id()))!;
+    expect(rs.artillery).toBe(321);
+    expect(rs.artilleryShare).toBe(250);
+  });
+
   test("combat consumes equipment during a real attack", () => {
     seconds(1);
     const gs = grandStrategyOf(game)!;
@@ -282,5 +341,61 @@ describe("decisions and advisors", () => {
     const c = aiChoose(s, "militarist");
     expect(c.law).toBeNull();
     expect(c.action).toBe("army_chief");
+  });
+});
+
+describe("GrandStrategy production lines (pure)", () => {
+  const input = {
+    factoryStructureLevels: 0,
+    tilesOwned: 0,
+    maxTroops: 1_000_000,
+    troops: 1000,
+  };
+
+  test("lines set the artillery share; no political power needed", () => {
+    const s = newState(0);
+    expect(take(s, "line_artillery")).toBe("ok");
+    expect(s.artilleryShare).toBe(LINE_SHARE.line_artillery);
+    expect(take(s, "line_balanced")).toBe("ok");
+    expect(s.artilleryShare).toBe(250);
+    expect(s.politicalPower).toBe(0);
+  });
+
+  test("output splits between equipment and artillery", () => {
+    const inf = newState(0);
+    const art = newState(0);
+    take(art, "line_artillery");
+    advance(inf, input);
+    advance(art, input);
+    expect(inf.artillery).toBe(0);
+    expect(art.equipment).toBe(inf.equipment - Math.floor(inf.equipment / 2));
+    expect(art.artillery).toBe(
+      Math.floor(Math.floor(inf.equipment / 2) / ARTILLERY_COST),
+    );
+  });
+
+  test("artillery is capped at max troops", () => {
+    const s = newState(0);
+    take(s, "line_artillery");
+    s.artillery = 99;
+    advance(s, { ...input, maxTroops: 100 });
+    expect(s.artillery).toBe(100);
+  });
+
+  test("loss cut scales with support", () => {
+    expect(artilleryLossPermille(0)).toBe(1000);
+    expect(artilleryLossPermille(1000)).toBe(1000 - ARTILLERY_LOSS_CUT);
+    expect(artilleryLossPermille(500)).toBe(1000 - ARTILLERY_LOSS_CUT / 2);
+    expect(artilleryLossPermille(5000)).toBe(1000 - ARTILLERY_LOSS_CUT);
+  });
+
+  test("AI moves to guns once its army is equipped", () => {
+    const s = newState(0);
+    expect(aiProductionLine(s, "industrialist", 1000)).toBe("line_infantry");
+    s.equipment = 600;
+    expect(aiProductionLine(s, "militarist", 1000)).toBe("line_balanced");
+    expect(aiProductionLine(s, "defender", 1000)).toBe("line_infantry");
+    s.equipment = 1000;
+    expect(aiProductionLine(s, "defender", 1000)).toBe("line_artillery");
   });
 });

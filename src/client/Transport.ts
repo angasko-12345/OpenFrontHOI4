@@ -1,8 +1,7 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import type {
-  AdvisorID,
-  DecisionID,
   FocusID,
+  GsActionID,
   LawID,
 } from "@openfront/engine-api/game/GameTypes";
 import {
@@ -191,7 +190,7 @@ export class SendSetLawIntentEvent implements GameEvent {
 }
 
 export class SendGsActionIntentEvent implements GameEvent {
-  constructor(public readonly action: DecisionID | AdvisorID) {}
+  constructor(public readonly action: GsActionID) {}
 }
 
 export class SendJustifyWarIntentEvent implements GameEvent {
