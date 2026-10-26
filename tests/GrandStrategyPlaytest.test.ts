@@ -41,8 +41,15 @@ test.skipIf(!process.env.PT_RUN)(
     const EVERY = Number(process.env.PT_EVERY ?? 600);
     const everAlive = new Set<number>();
     const deathTick = new Map<number, number>();
+    // PT_GS=nowar: Grand Strategy on, but the M4 war layer (occupation,
+    // supply, war goals, coalition) off, to measure M4 on its own.
+    const noWar = process.env.PT_GS === "nowar";
     while (g.ticks() < END) {
       stepScripted(runner);
+      if (noWar) {
+        const gsx = grandStrategyOf(g);
+        if (gsx !== null) gsx.warLayer = false;
+      }
       const nations = g
         .allPlayers()
         .filter((p) => p.type() === PlayerType.Nation);

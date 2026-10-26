@@ -7,7 +7,12 @@
 // spawn luck cancel out; what is left is the effect of our rules.
 //
 //   node scripts/gs-balance.mjs [--seeds 20] [--ticks 7200] [--band 8]
-//        [--snowball-target 10] [--out dir]
+//        [--snowball-target 10] [--out dir] [--a on] [--b off] [--from 0]
+//
+// --a / --b pick the two modes to compare (PT_GS values: on, off, nowar;
+// nowar = Grand Strategy without the M4 war layer). Reports still say
+// "on" for A and "off" for B. --from skips the first seeds, so two
+// processes can fill one cache in parallel.
 //
 // Exit code 1 when any personality's average end land-share shift is outside
 // +-band points, or, with --snowball-target T, when the GS-on mean snowball
@@ -43,6 +48,10 @@ const snowTarget =
 const out = resolve(args.out ?? "gs-balance-out");
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PERS = PERSONALITIES;
+const modeA = args.a ?? "on";
+const modeB = args.b ?? "off";
+const from = Number(args.from ?? 0);
+console.log(`A = ${modeA}, B = ${modeB}`);
 const CACHE_VERSION = "v2";
 
 mkdirSync(out, { recursive: true });
@@ -97,10 +106,10 @@ const game = {
 const idxDiff = [];
 let pairs = 0;
 
-for (let i = 0; i < seeds; i++) {
+for (let i = from; i < seeds; i++) {
   const seed = `GSBAL${String(i).padStart(3, "0")}`;
-  const onFile = run(seed, "on");
-  const offFile = run(seed, "off");
+  const onFile = run(seed, modeA);
+  const offFile = run(seed, modeB);
   if (onFile === null || offFile === null) continue;
   const a = load(onFile);
   const b = load(offFile);

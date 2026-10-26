@@ -6,6 +6,7 @@ import {
   advanceWarSecond,
   aiJustifyTarget,
   canJustify,
+  grantDefensiveGoal,
   capitalSupplyRange,
   combinedCapModifier,
   COALITION_ENTER_PERMILLE,
@@ -33,6 +34,9 @@ import { JustifyWarExecution } from "@openfront/engine/execution/JustifyWarExecu
 import { SpawnExecution } from "@openfront/engine/execution/SpawnExecution";
 import { Game, Player } from "@openfront/engine/game/Game";
 import { setup } from "./util/Setup";
+
+const hasWarGoalOf = (s: { warGoals: { target: number }[] }, t: number) =>
+  s.warGoals.some((g) => g.target === t);
 import { diffSnapshots, roundTrip } from "./util/Snapshot";
 
 describe("occupation", () => {
@@ -123,6 +127,23 @@ describe("war goals", () => {
       s.warGoals.push({ target: 10 + i, seconds: 100 });
     }
     expect(canJustify(s, 1, 2, JUSTIFY_COST, true)).toBe("too_many_goals");
+  });
+
+  test("being attacked grants a renewable goal outside the limit", () => {
+    const s = newWarState();
+    grantDefensiveGoal(s, 9);
+    expect(hasWarGoalOf(s, 9)).toBe(true);
+    s.warGoals[0].seconds = 5;
+    grantDefensiveGoal(s, 9);
+    expect(s.warGoals).toEqual([
+      { target: 9, seconds: WAR_GOAL_SECONDS, defensive: true },
+    ]);
+    for (let i = 0; i < MAX_WAR_GOALS; i++) {
+      s.warGoals.push({ target: 10 + i, seconds: 100 });
+    }
+    expect(canJustify(s, 1, 2, JUSTIFY_COST, true)).toBe("too_many_goals");
+    s.warGoals.pop();
+    expect(canJustify(s, 1, 2, JUSTIFY_COST, true)).toBe("ok");
   });
 
   test("loss multiplier: supply, goals, coalition", () => {
@@ -247,6 +268,29 @@ describe("GrandStrategyExecution war layer", () => {
     expect(mod).toBeLessThan(0);
     // Never below what the land alone would be worth with no conquest.
     expect(game.config().maxTroops(a)).toBeGreaterThan(capBefore * 0.5);
+  });
+
+  test("the defender gets a goal against its attacker", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    game.addExecution(new AttackExecution(a.troops() * 0.5, a, b.id()));
+    for (let i = 0; i < 9 && b.isAlive(); i++) game.executeNextTick();
+    expect(hasWarGoalOf(gs.warOf(b)!, a.smallID())).toBe(true);
+    expect(hasWarGoalOf(gs.warOf(a)!, b.smallID())).toBe(false);
+  });
+
+  test("warLayer off: no occupation, no war multiplier", () => {
+    const gs = grandStrategyOf(game)!;
+    gs.warLayer = false;
+    seconds(1);
+    const bare = gs.adjustCombat(a, b, 1000, 100, 10);
+    gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
+    expect(gs.adjustCombat(a, b, 1000, 100, 10).attackerTroopLoss).toBe(
+      bare.attackerTroopLoss,
+    );
+    game.addExecution(new AttackExecution(a.troops() * 0.9, a, b.id()));
+    for (let i = 0; i < 9 && b.isAlive(); i++) game.executeNextTick();
+    expect(gs.warOf(a)!.occupied).toBe(0);
   });
 
   test("justify_war spends PP, then grants a goal; the target sees it", () => {

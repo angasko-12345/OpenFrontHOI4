@@ -53,6 +53,8 @@ export const COALITION_EXIT_PERMILLE = 350;
 export interface WarGoal {
   target: number;
   seconds: number;
+  /** Granted for being attacked; does not count toward MAX_WAR_GOALS. */
+  defensive?: boolean;
 }
 
 export interface NationWarState {
@@ -135,7 +137,7 @@ export function advanceWarSecond(
   }
 
   s.warGoals = s.warGoals
-    .map((g) => ({ target: g.target, seconds: g.seconds - 1 }))
+    .map((g) => ({ ...g, seconds: g.seconds - 1 }))
     .filter((g) => g.seconds > 0);
 
   let justified: number | null = null;
@@ -151,6 +153,22 @@ export function advanceWarSecond(
     }
   }
   return { warSupportDelta: unrest ? -UNREST_WAR_SUPPORT : 0, justified };
+}
+
+/**
+ * Being attacked gives a war goal against the attacker at once (or renews
+ * it), so counterattacks are never penalised. Not limited by MAX_WAR_GOALS.
+ */
+export function grantDefensiveGoal(s: NationWarState, attacker: number): void {
+  const g = s.warGoals.find((x) => x.target === attacker);
+  if (g !== undefined) g.seconds = WAR_GOAL_SECONDS;
+  else {
+    s.warGoals.push({
+      target: attacker,
+      seconds: WAR_GOAL_SECONDS,
+      defensive: true,
+    });
+  }
 }
 
 export function hasWarGoal(s: NationWarState, target: number): boolean {
@@ -181,7 +199,8 @@ export function canJustify(
   if (!targetValid) return "invalid_target";
   if (s.justifying !== null) return "already_justifying";
   if (hasWarGoal(s, target)) return "already_justified";
-  if (s.warGoals.length + 1 > MAX_WAR_GOALS) return "too_many_goals";
+  const offensive = s.warGoals.filter((g) => g.defensive !== true).length;
+  if (offensive + 1 > MAX_WAR_GOALS) return "too_many_goals";
   if (politicalPower < JUSTIFY_COST) return "not_enough_pp";
   return "ok";
 }

@@ -39,6 +39,7 @@ import {
   canJustify,
   capitalSupplyRange,
   combinedCapModifier,
+  grantDefensiveGoal,
   hasWarGoal,
   JUSTIFY_COST,
   JustifyCheck,
@@ -81,6 +82,11 @@ export class GrandStrategyExecution implements Execution {
   private mg: Game | null = null;
   private states = new Map<number, NationGsState>();
   private wars = new Map<number, NationWarState>();
+  /**
+   * The M4 war layer (occupation, supply, war goals, coalition). Only the
+   * balance harness turns it off, to measure it; not saved in snapshots.
+   */
+  warLayer = true;
   /** Small id of the coalition target, if one nation dominates. */
   private coalitionLeader: number | null = null;
 
@@ -162,9 +168,15 @@ export class GrandStrategyExecution implements Execution {
   }
 
   /** A tile taken from another player starts out occupied. */
-  onConquer(attacker: Player, _defender: Player, tiles = 1): void {
+  onConquer(attacker: Player, defender: Player, tiles = 1): void {
+    if (!this.warLayer) return;
     const w = this.warOf(attacker);
     if (w !== null) addOccupied(w, tiles);
+    // Whoever is attacked holds a war goal against the attacker.
+    const dw = this.warOf(defender);
+    if (dw !== null && attacker.type() !== PlayerType.Bot) {
+      grantDefensiveGoal(dw, attacker.smallID());
+    }
   }
 
   /** Whether `tile` is within `player`'s supply (capital, cities, ports, factories). */
@@ -252,7 +264,7 @@ export class GrandStrategyExecution implements Execution {
     const dMult = defenderLossMultiplier(dEquipped);
     const aw = this.warOf(attacker);
     const warMult =
-      aw === null
+      aw === null || !this.warLayer
         ? 1000
         : warLossMultiplier({
             targetIsNation: defender.type() !== PlayerType.Bot,
@@ -288,7 +300,9 @@ export class GrandStrategyExecution implements Execution {
     if (mg.inSpawnPhase()) return;
 
     const players = mg.players();
-    this.coalitionLeader = nextCoalitionLeader(
+    this.coalitionLeader = !this.warLayer
+      ? null
+      : nextCoalitionLeader(
       this.coalitionLeader,
       players
         .filter((p) => p.type() !== PlayerType.Bot)
@@ -300,7 +314,7 @@ export class GrandStrategyExecution implements Execution {
       const s = this.stateOf(p)!;
       const w = this.warOf(p)!;
       if (p.type() === PlayerType.Nation) {
-        this.aiJustify(p, s, w);
+        if (this.warLayer) this.aiJustify(p, s, w);
         const choice = aiChoose(s, aiPersonalityFor(p.smallID()));
         if (choice.focus !== null) startFocus(s, choice.focus);
         if (choice.law !== null) setLaw(s, choice.law);
@@ -523,7 +537,11 @@ function warSnapshot(w: NationWarState | undefined) {
 }
 
 const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
-const WarGoalSchema = z.object({ target: zInt(), seconds: zInt() });
+const WarGoalSchema = z.object({
+  target: zInt(),
+  seconds: zInt(),
+  defensive: z.boolean().optional(),
+});
 
 const GrandStrategyStateSchema = z.object({
   initialized: z.boolean(),
