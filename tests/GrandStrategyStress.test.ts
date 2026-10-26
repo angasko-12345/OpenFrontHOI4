@@ -425,7 +425,7 @@ describe("GrandStrategyExecution edge cases", () => {
 });
 
 describe("GrandStrategy snapshot migration", () => {
-  test("v1 records migrate through v9 with defaults", () => {
+  test("v1 records migrate through v10 with defaults", () => {
     const m = GrandStrategyExecutionSnapshot.migrations;
     const v2 = m[1]({
       initialized: true,
@@ -441,7 +441,7 @@ describe("GrandStrategy snapshot migration", () => {
       ],
     });
     const parsed = GrandStrategyExecutionSnapshot.schema.parse(
-      m[8](m[7](m[6](m[5](m[4](m[3](m[2](v2))))))),
+      m[9](m[8](m[7](m[6](m[5](m[4](m[3](m[2](v2)))))))),
     );
     expect(parsed.coalitionLeader).toBeNull();
     expect(parsed.states[0].steelDeposits).toBe(0);

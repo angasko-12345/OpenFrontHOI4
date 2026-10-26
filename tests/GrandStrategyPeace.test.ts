@@ -21,7 +21,9 @@ import {
   newPeaceState,
   OFFER_SECONDS,
   recordConquest,
-  TRUCE_SECONDS,
+  TRUCE_BREAKABLE_SECONDS,
+  TRUCE_MAX_LOCK,
+  TRUCE_MIN_LOCK,
   WAR_IDLE_SECONDS,
   WEARINESS_MAX,
   WEARY_ATTACK_LOSS,
@@ -135,7 +137,8 @@ describe("wars, truces and capitulation rules", () => {
     expect(hasTruce(a, 2) && hasTruce(b, 1)).toBe(true);
     expect(a.enemies).toEqual([]);
     expect(b.offers).toEqual([]);
-    for (let i = 0; i < TRUCE_SECONDS - 1; i++) advancePeaceTimers(a, 1);
+    const total = TRUCE_MIN_LOCK + TRUCE_BREAKABLE_SECONDS;
+    for (let i = 0; i < total - 1; i++) advancePeaceTimers(a, 1);
     expect(hasTruce(a, 2)).toBe(true);
     advancePeaceTimers(a, 1);
     expect(hasTruce(a, 2)).toBe(false);
@@ -283,7 +286,7 @@ describe("GrandStrategyExecution peace", () => {
     expect(b.numTilesOwned()).toBe(tiles);
     expect(a.outgoingAttacks().length).toBe(0);
     // The truce ends on time and attacks work again.
-    seconds(TRUCE_SECONDS);
+    seconds(TRUCE_MAX_LOCK + TRUCE_BREAKABLE_SECONDS);
     expect(game.config().isAttackLocked(a, b)).toBe(false);
   });
 
@@ -323,7 +326,7 @@ describe("GrandStrategyExecution peace", () => {
     expect(gs.stateOf(a)!.weariness ?? 0).toBe(0);
     expect(gs.peaceOf(a)!.enemies).toEqual([]);
     expect(gs.offerPeace(a, b)).toBe("disabled");
-    gs.peaceOf(a)!.truces.push({ target: b.smallID(), seconds: 100 });
+    gs.peaceOf(a)!.truces.push({ target: b.smallID(), seconds: 100, lock: 50 });
     expect(game.config().isAttackLocked(a, b)).toBe(false);
   });
 
@@ -332,7 +335,7 @@ describe("GrandStrategyExecution peace", () => {
     seconds(1);
     fight();
     gs.stateOf(a)!.weariness = 123_456;
-    gs.peaceOf(a)!.truces.push({ target: 99, seconds: 42 });
+    gs.peaceOf(a)!.truces.push({ target: 99, seconds: 42, lock: 7 });
     gs.peaceOf(b)!.offers.push({ target: a.smallID(), seconds: 17 });
     const { bytes, restored, again } = await roundTrip(game, "ocean_and_land");
     expect(diffSnapshots(bytes, again)).toEqual([]);
@@ -340,13 +343,15 @@ describe("GrandStrategyExecution peace", () => {
     const ra = restored.player(a.id());
     const rb = restored.player(b.id());
     expect(rgs.stateOf(ra)!.weariness).toBe(123_456);
-    expect(rgs.peaceOf(ra)!.truces).toEqual([{ target: 99, seconds: 42 }]);
+    expect(rgs.peaceOf(ra)!.truces).toEqual([
+      { target: 99, seconds: 42, lock: 7 },
+    ]);
     expect(rgs.peaceOf(rb)!.offers).toEqual([
       { target: a.smallID(), seconds: 17 },
     ]);
     expect(rgs.peaceOf(ra)!.enemies.length).toBe(1);
     // The truce lock is installed again after a restore.
-    rgs.peaceOf(ra)!.truces.push({ target: rb.smallID(), seconds: 5 });
+    rgs.peaceOf(ra)!.truces.push({ target: rb.smallID(), seconds: 5, lock: 0 });
     expect(restored.config().isAttackLocked(rb, ra)).toBe(true);
   });
 });
