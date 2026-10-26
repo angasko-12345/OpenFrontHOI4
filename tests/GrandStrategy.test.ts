@@ -22,16 +22,11 @@ import {
   takeAction,
   troopCapModifier,
   ZERO_MODIFIERS,
-} from "@openfront/engine-lib/game/GrandStrategy";
-import {
   aiProductionLine,
   ARTILLERY_COST,
   ARTILLERY_LOSS_CUT,
   artilleryLossPermille,
   LINE_SHARE,
-  newNationState as newState,
-  advanceSecond as advance,
-  takeAction as take,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
@@ -353,20 +348,20 @@ describe("GrandStrategy production lines (pure)", () => {
   };
 
   test("lines set the artillery share; no political power needed", () => {
-    const s = newState(0);
-    expect(take(s, "line_artillery")).toBe("ok");
+    const s = newNationState(0);
+    expect(takeAction(s, "line_artillery")).toBe("ok");
     expect(s.artilleryShare).toBe(LINE_SHARE.line_artillery);
-    expect(take(s, "line_balanced")).toBe("ok");
+    expect(takeAction(s, "line_balanced")).toBe("ok");
     expect(s.artilleryShare).toBe(250);
     expect(s.politicalPower).toBe(0);
   });
 
   test("output splits between equipment and artillery", () => {
-    const inf = newState(0);
-    const art = newState(0);
-    take(art, "line_artillery");
-    advance(inf, input);
-    advance(art, input);
+    const inf = newNationState(0);
+    const art = newNationState(0);
+    takeAction(art, "line_artillery");
+    advanceSecond(inf, input);
+    advanceSecond(art, input);
     expect(inf.artillery).toBe(0);
     expect(art.equipment).toBe(inf.equipment - Math.floor(inf.equipment / 2));
     expect(art.artillery).toBe(
@@ -375,10 +370,10 @@ describe("GrandStrategy production lines (pure)", () => {
   });
 
   test("artillery is capped at max troops", () => {
-    const s = newState(0);
-    take(s, "line_artillery");
+    const s = newNationState(0);
+    takeAction(s, "line_artillery");
     s.artillery = 99;
-    advance(s, { ...input, maxTroops: 100 });
+    advanceSecond(s, { ...input, maxTroops: 100 });
     expect(s.artillery).toBe(100);
   });
 
@@ -390,7 +385,7 @@ describe("GrandStrategy production lines (pure)", () => {
   });
 
   test("AI moves to guns once its army is equipped", () => {
-    const s = newState(0);
+    const s = newNationState(0);
     expect(aiProductionLine(s, "industrialist", 1000)).toBe("line_infantry");
     s.equipment = 600;
     expect(aiProductionLine(s, "militarist", 1000)).toBe("line_balanced");
