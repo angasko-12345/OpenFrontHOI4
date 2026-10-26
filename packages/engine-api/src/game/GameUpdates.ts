@@ -170,6 +170,18 @@ export interface GrandStrategyUpdate {
   activeDecisions: { id: string; seconds: number }[];
   /** Decisions on cooldown and their seconds left. */
   decisionCooldowns: { id: string; seconds: number }[];
+  /** Tiles taken from other players that have not integrated yet. */
+  occupied: number;
+  /** Troop-cap modifier from occupied land, per-mille (zero or negative). */
+  occupationModifier: number;
+  /** War goal being justified, by target player id, and seconds left. */
+  justifying: { target: string; seconds: number } | null;
+  /** Justified war goals and the seconds each stays valid. */
+  warGoals: { target: string; seconds: number }[];
+  /** Players justifying, or holding, a war goal against this player. */
+  justifiedAgainstMe: string[];
+  /** The nation the coalition is against, if any. */
+  coalitionLeader: string | null;
 }
 
 export interface BonusEventUpdate {

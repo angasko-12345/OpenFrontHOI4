@@ -99,6 +99,7 @@ const SAMPLE_INTENTS: StampedIntent[] = [
   { type: "set_focus", clientID: P1, focus: "war_propaganda" },
   { type: "set_law", clientID: P2, law: "total_mobilization" },
   { type: "gs_action", clientID: P1, action: "army_chief" },
+  { type: "justify_war", clientID: P1, targetID: P2 },
   { type: "move_warship", clientID: P3, unitIds: [1, 2, 3], tile: 555 },
   { type: "delete_unit", clientID: P3, unitId: 9 },
   { type: "mark_disconnected", clientID: P1, isDisconnected: true },

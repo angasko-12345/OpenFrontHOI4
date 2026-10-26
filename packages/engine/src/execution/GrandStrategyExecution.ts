@@ -1,3 +1,4 @@
+import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   AdvisorID,
   DecisionID,
@@ -9,6 +10,7 @@ import {
   ActionCheck,
   advanceSecond,
   aiChoose,
+  AI_PP_RESERVE,
   aiPersonalityFor,
   attackerLossMultiplier,
   DEFAULT_CONSCRIPTION_LAW,
@@ -30,6 +32,25 @@ import {
   troopCapModifier,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  addOccupied,
+  advanceWarSecond,
+  aiJustifyTarget,
+  canJustify,
+  capitalSupplyRange,
+  combinedCapModifier,
+  hasWarGoal,
+  JUSTIFY_COST,
+  JustifyCheck,
+  NationWarState,
+  newWarState,
+  nextCoalitionLeader,
+  occupationCapModifier,
+  startJustify,
+  supplyRange,
+  WarGoal,
+  warLossMultiplier,
+} from "@openfront/engine-lib/game/GrandStrategyWar";
 import { zInt } from "@openfront/engine-lib/snapshot/SnapshotType";
 import { z } from "zod";
 import { Execution, Game, Player } from "../game/Game";
@@ -59,6 +80,9 @@ export interface CombatAdjustment {
 export class GrandStrategyExecution implements Execution {
   private mg: Game | null = null;
   private states = new Map<number, NationGsState>();
+  private wars = new Map<number, NationWarState>();
+  /** Small id of the coalition target, if one nation dominates. */
+  private coalitionLeader: number | null = null;
 
   init(mg: Game, _ticks: number): void {
     this.attach(mg);
@@ -71,7 +95,15 @@ export class GrandStrategyExecution implements Execution {
     mg.config().setTroopCapModifier((p) => {
       if (p.type() === PlayerType.Bot) return 0;
       const s = this.states.get(p.smallID());
-      return s === undefined ? 0 : troopCapModifier(s);
+      if (s === undefined) return 0;
+      const w = this.wars.get(p.smallID());
+      return w === undefined
+        ? troopCapModifier(s)
+        : combinedCapModifier(
+            troopCapModifier(s),
+            w.occupied,
+            p.numTilesOwned(),
+          );
     });
   }
 
@@ -84,6 +116,74 @@ export class GrandStrategyExecution implements Execution {
       this.states.set(player.smallID(), s);
     }
     return s;
+  }
+
+  /** War state (occupation, war goals) for a participating player. */
+  warOf(player: Player): NationWarState | null {
+    if (player.type() === PlayerType.Bot) return null;
+    let w = this.wars.get(player.smallID());
+    if (w === undefined) {
+      w = newWarState();
+      this.wars.set(player.smallID(), w);
+    }
+    return w;
+  }
+
+  coalitionLeaderId(): number | null {
+    return this.coalitionLeader;
+  }
+
+  /** A valid war-goal target: alive, not a bot, not friendly. */
+  private validTarget(player: Player, target: Player): boolean {
+    return (
+      target !== player &&
+      target.isAlive() &&
+      target.type() !== PlayerType.Bot &&
+      !player.isFriendly(target)
+    );
+  }
+
+  justifyWar(player: Player, target: Player): JustifyCheck {
+    const s = this.stateOf(player);
+    const w = this.warOf(player);
+    if (s === null || w === null) return "invalid_target";
+    const check = canJustify(
+      w,
+      player.smallID(),
+      target.smallID(),
+      s.politicalPower,
+      this.validTarget(player, target),
+    );
+    if (check === "ok") {
+      s.politicalPower -= JUSTIFY_COST;
+      startJustify(w, target.smallID());
+    }
+    return check;
+  }
+
+  /** A tile taken from another player starts out occupied. */
+  onConquer(attacker: Player, _defender: Player, tiles = 1): void {
+    const w = this.warOf(attacker);
+    if (w !== null) addOccupied(w, tiles);
+  }
+
+  /** Whether `tile` is within `player`'s supply (capital, cities, ports, factories). */
+  inSupply(player: Player, tile: TileRef): boolean {
+    const mg = this.mg;
+    if (mg === null) return true;
+    const land = mg.numLandTiles();
+    const spawn = player.spawnTile();
+    if (spawn !== undefined) {
+      const r = capitalSupplyRange(land);
+      if (mg.euclideanDistSquared(spawn, tile) <= r * r) return true;
+    }
+    return mg.anyUnitNearby(
+      tile,
+      supplyRange(land),
+      SUPPLY_HUBS,
+      () => true,
+      player.id(),
+    );
   }
 
   modifiers(player: Player): GsModifiers {
@@ -135,6 +235,7 @@ export class GrandStrategyExecution implements Execution {
     attackTroops: number,
     attackerTroopLoss: number,
     defenderTroopLoss: number,
+    tile?: TileRef,
   ): CombatAdjustment {
     const as = this.stateOf(attacker);
     const ds = this.stateOf(defender);
@@ -149,7 +250,19 @@ export class GrandStrategyExecution implements Execution {
       as === null ? BASE_WAR_SUPPORT : as.warSupport,
     );
     const dMult = defenderLossMultiplier(dEquipped);
-    const aLoss = (attackerTroopLoss * aMult) / 1000;
+    const aw = this.warOf(attacker);
+    const warMult =
+      aw === null
+        ? 1000
+        : warLossMultiplier({
+            targetIsNation: defender.type() !== PlayerType.Bot,
+            justified: hasWarGoal(aw, defender.smallID()),
+            targetIsCoalitionLeader:
+              this.coalitionLeader === defender.smallID(),
+            inSupply: tile === undefined || this.inSupply(attacker, tile),
+          });
+    const aLoss =
+      (attackerTroopLoss * Math.floor((aMult * warMult) / 1000)) / 1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
     if (as !== null) {
       as.attackLossesThisSecond += Math.floor(aLoss);
@@ -174,14 +287,31 @@ export class GrandStrategyExecution implements Execution {
     if (mg === null) throw new Error("Not initialized");
     if (mg.inSpawnPhase()) return;
 
-    for (const p of mg.players()) {
+    const players = mg.players();
+    this.coalitionLeader = nextCoalitionLeader(
+      this.coalitionLeader,
+      players
+        .filter((p) => p.type() !== PlayerType.Bot)
+        .map((p) => ({ id: p.smallID(), tiles: p.numTilesOwned() })),
+      mg.numLandTiles(),
+    );
+    for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
+      const w = this.warOf(p)!;
       if (p.type() === PlayerType.Nation) {
+        this.aiJustify(p, s, w);
         const choice = aiChoose(s, aiPersonalityFor(p.smallID()));
         if (choice.focus !== null) startFocus(s, choice.focus);
         if (choice.law !== null) setLaw(s, choice.law);
         if (choice.action !== null) takeAction(s, choice.action);
+      }
+      const war = advanceWarSecond(w, p.numTilesOwned());
+      if (war.warSupportDelta !== 0) {
+        s.warSupport = Math.max(
+          0,
+          Math.min(1000, s.warSupport + war.warSupportDelta),
+        );
       }
       const factoryLevels = p
         .units(UnitType.Factory)
@@ -213,13 +343,93 @@ export class GrandStrategyExecution implements Execution {
         advisors: [...s.advisors],
         activeDecisions: copyTimers(s.activeDecisions),
         decisionCooldowns: copyTimers(s.decisionCooldowns),
+        occupied: w.occupied,
+        occupationModifier: occupationCapModifier(
+          w.occupied,
+          p.numTilesOwned(),
+        ),
+        justifying:
+          w.justifying === null ? null : this.goalUpdate(mg, w.justifying),
+        warGoals: w.warGoals.map((g) => this.goalUpdate(mg, g)),
+        justifiedAgainstMe: this.justifiersOf(p.smallID()),
+        coalitionLeader:
+          this.coalitionLeader === null
+            ? null
+            : mg.playerBySmallID(this.coalitionLeader).isPlayer()
+              ? (mg.playerBySmallID(this.coalitionLeader) as Player).id()
+              : null,
       });
     }
     // Dead players keep no state.
-    for (const id of [...this.states.keys()]) {
+    for (const id of [...this.states.keys(), ...this.wars.keys()]) {
       const p = mg.playerBySmallID(id);
-      if (!p.isPlayer() || !p.isAlive()) this.states.delete(id);
+      if (!p.isPlayer() || !p.isAlive()) {
+        this.states.delete(id);
+        this.wars.delete(id);
+      }
     }
+  }
+
+  private goalUpdate(
+    mg: Game,
+    g: WarGoal,
+  ): { target: string; seconds: number } {
+    const t = mg.playerBySmallID(g.target);
+    return {
+      target: t.isPlayer() ? (t as Player).id() : "",
+      seconds: g.seconds,
+    };
+  }
+
+  /** Ids of players justifying, or holding, a war goal against `smallId`. */
+  private justifiersOf(smallId: number): string[] {
+    const mg = this.mg!;
+    const out: string[] = [];
+    for (const [id, w] of this.wars) {
+      if (w.justifying?.target === smallId || hasWarGoal(w, smallId)) {
+        const p = mg.playerBySmallID(id);
+        if (p.isPlayer()) out.push((p as Player).id());
+      }
+    }
+    return out;
+  }
+
+  /** AI nations justify against whoever they fight, else their largest neighbour. */
+  private aiJustify(p: Player, s: NationGsState, w: NationWarState): void {
+    if (w.justifying !== null || s.politicalPower < JUSTIFY_COST) return;
+    const attacking = new Set<number>();
+    for (const a of p.outgoingAttacks()) {
+      const t = a.target();
+      if (t.isPlayer()) attacking.add(t.smallID());
+    }
+    const mg = this.mg!;
+    const seen = new Set<number>();
+    const nbuf: TileRef[] = [0, 0, 0, 0];
+    for (const t of p.borderTiles()) {
+      const n = mg.neighbors4(t, nbuf);
+      for (let i = 0; i < n; i++) {
+        const o = mg.ownerID(nbuf[i]);
+        if (o !== 0 && o !== p.smallID()) seen.add(o);
+      }
+    }
+    const candidates = [...seen]
+      .sort((x, y) => x - y)
+      .map((id) => mg.playerBySmallID(id))
+      .filter((n): n is Player => n.isPlayer())
+      .filter((n) => this.validTarget(p, n as Player))
+      .map((n) => ({
+        id: n.smallID(),
+        tiles: n.numTilesOwned(),
+        attacking: attacking.has(n.smallID()),
+      }));
+    const urgent = candidates.some((c) => c.attacking && !hasWarGoal(w, c.id));
+    // Only justify ahead of time out of spare political power.
+    if (!urgent && (w.warGoals.length > 0 || s.politicalPower < AI_PP_RESERVE))
+      return;
+    const target = aiJustifyTarget(w, candidates);
+    if (target === null) return;
+    const t = mg.playerBySmallID(target);
+    if (t.isPlayer()) this.justifyWar(p, t as Player);
   }
 
   isActive(): boolean {
@@ -250,7 +460,9 @@ export class GrandStrategyExecution implements Execution {
         activeDecisions: copyTimers(s.activeDecisions),
         decisionCooldowns: copyTimers(s.decisionCooldowns),
         advisors: [...s.advisors],
+        ...warSnapshot(this.wars.get(id)),
       })),
+      coalitionLeader: this.coalitionLeader,
     });
   }
 
@@ -277,15 +489,41 @@ export class GrandStrategyExecution implements Execution {
         },
       ]),
     );
+    this.wars = new Map(
+      s.states.map((n) => [
+        n.id,
+        {
+          occupied: n.occupied,
+          justifying: n.justifying === null ? null : { ...n.justifying },
+          warGoals: n.warGoals.map((g) => ({ ...g })),
+        },
+      ]),
+    );
+    this.coalitionLeader = s.coalitionLeader;
     if (s.initialized) this.attach(r.game);
   }
 }
+
+const SUPPLY_HUBS: readonly UnitType[] = [
+  UnitType.City,
+  UnitType.Port,
+  UnitType.Factory,
+];
 
 function copyTimers(list: readonly TimedEntry[]): TimedEntry[] {
   return list.map((e) => ({ id: e.id, seconds: e.seconds }));
 }
 
+function warSnapshot(w: NationWarState | undefined) {
+  return {
+    occupied: w?.occupied ?? 0,
+    justifying: w?.justifying ? { ...w.justifying } : null,
+    warGoals: (w?.warGoals ?? []).map((g) => ({ ...g })),
+  };
+}
+
 const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
+const WarGoalSchema = z.object({ target: zInt(), seconds: zInt() });
 
 const GrandStrategyStateSchema = z.object({
   initialized: z.boolean(),
@@ -306,16 +544,31 @@ const GrandStrategyStateSchema = z.object({
       activeDecisions: z.array(TimedEntrySchema),
       decisionCooldowns: z.array(TimedEntrySchema),
       advisors: z.array(z.string()),
+      occupied: zInt(),
+      justifying: WarGoalSchema.nullable(),
+      warGoals: z.array(WarGoalSchema),
     }),
   ),
+  coalitionLeader: zInt().nullable(),
 });
 type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 3,
+  version: 4,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v4 added occupation, war goals and the coalition.
+    3: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      coalitionLeader: null,
+      states: d.states.map((n) => ({
+        ...n,
+        occupied: 0,
+        justifying: null,
+        warGoals: [],
+      })),
+    }),
     // v3 added decisions and advisors.
     2: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

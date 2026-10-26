@@ -48,6 +48,7 @@ export type Intent =
   | SetFocusIntent
   | SetLawIntent
   | GsActionIntent
+  | JustifyWarIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
   | KickPlayerIntent
@@ -63,6 +64,7 @@ export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
 export type SetFocusIntent = z.infer<typeof SetFocusIntentSchema>;
 export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
 export type GsActionIntent = z.infer<typeof GsActionIntentSchema>;
+export type JustifyWarIntent = z.infer<typeof JustifyWarIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
 export type AllianceRejectIntent = z.infer<typeof AllianceRejectIntentSchema>;
@@ -500,6 +502,12 @@ export const GsActionIntentSchema = z.object({
   action: z.enum([...DECISION_IDS, ...ADVISOR_IDS]),
 });
 
+/** Start justifying a war goal against another player. */
+export const JustifyWarIntentSchema = z.object({
+  type: z.literal("justify_war"),
+  targetID: MappedID,
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -610,6 +618,7 @@ export const IntentSchema = z.discriminatedUnion("type", [
   SetFocusIntentSchema,
   SetLawIntentSchema,
   GsActionIntentSchema,
+  JustifyWarIntentSchema,
   MoveWarshipIntentSchema,
   QuickChatIntentSchema,
   AllianceExtensionIntentSchema,

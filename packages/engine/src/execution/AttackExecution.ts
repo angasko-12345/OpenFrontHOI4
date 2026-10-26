@@ -360,6 +360,7 @@ export class AttackExecution implements Execution {
           troopCount,
           attackerTroopLoss,
           defenderTroopLoss,
+          tileToConquer,
         ));
       }
       tickBudget -= tickFraction;
@@ -369,6 +370,7 @@ export class AttackExecution implements Execution {
         targetPlayer.removeTroops(defenderTroopLoss);
       }
       this._owner.conquer(tileToConquer);
+      if (gs !== null && targetPlayer) gs.onConquer(this._owner, targetPlayer);
       this.handleDeadDefender();
     }
   }
@@ -479,6 +481,7 @@ export class AttackExecution implements Execution {
   private handleDeadDefender() {
     if (!(this.target.isPlayer() && this.target.numTilesOwned() < 100)) return;
     const target: Player = this.target;
+    const tilesBefore = this._owner.numTilesOwned();
 
     this.mg.conquerPlayer(this._owner, target);
 
@@ -510,6 +513,10 @@ export class AttackExecution implements Execution {
       }
       if (!progressed) break;
     }
+    // Grand Strategy: the mopped-up remnant is occupied land too.
+    const taken = this._owner.numTilesOwned() - tilesBefore;
+    if (taken > 0)
+      grandStrategyOf(this.mg)?.onConquer(this._owner, target, taken);
   }
 
   owner(): Player {

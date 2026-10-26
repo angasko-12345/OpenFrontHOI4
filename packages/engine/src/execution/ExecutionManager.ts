@@ -20,6 +20,8 @@ import { DonateTroopsExecution } from "./DonateTroopExecution";
 import { EmbargoAllExecution } from "./EmbargoAllExecution";
 import { EmbargoExecution } from "./EmbargoExecution";
 import { EmojiExecution } from "./EmojiExecution";
+import { GsActionExecution } from "./GsActionExecution";
+import { JustifyWarExecution } from "./JustifyWarExecution";
 import { MarkDisconnectedExecution } from "./MarkDisconnectedExecution";
 import { MoveWarshipExecution } from "./MoveWarshipExecution";
 import { NationExecution } from "./NationExecution";
@@ -28,7 +30,6 @@ import { PauseExecution } from "./PauseExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
 import { SetFocusExecution } from "./SetFocusExecution";
-import { GsActionExecution } from "./GsActionExecution";
 import { SetLawExecution } from "./SetLawExecution";
 import { SpawnExecution } from "./SpawnExecution";
 import { TargetPlayerExecution } from "./TargetPlayerExecution";
@@ -122,6 +123,8 @@ export class Executor {
         return new SetLawExecution(player, intent.law);
       case "gs_action":
         return new GsActionExecution(player, intent.action);
+      case "justify_war":
+        return new JustifyWarExecution(player, intent.targetID);
       case "build_unit":
         return new ConstructionExecution(
           player,

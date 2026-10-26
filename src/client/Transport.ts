@@ -194,6 +194,10 @@ export class SendGsActionIntentEvent implements GameEvent {
   constructor(public readonly action: DecisionID | AdvisorID) {}
 }
 
+export class SendJustifyWarIntentEvent implements GameEvent {
+  constructor(public readonly targetID: PlayerID) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -353,6 +357,9 @@ export class Transport {
     );
     this.subscribe(SendGsActionIntentEvent, (e) =>
       this.sendIntent({ type: "gs_action", action: e.action }),
+    );
+    this.subscribe(SendJustifyWarIntentEvent, (e) =>
+      this.sendIntent({ type: "justify_war", targetID: e.targetID }),
     );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),

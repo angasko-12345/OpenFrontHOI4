@@ -166,6 +166,8 @@ describe("GrandStrategyExecution", () => {
   test("an unequipped attacker loses more troops than an equipped one", () => {
     const gs = grandStrategyOf(game)!;
     seconds(1);
+    // A justified war, so only equipment differs.
+    gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
     const equipped = gs.adjustCombat(a, b, 1000, 100, 10);
     gs.stateOf(a)!.equipment = 0;
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
