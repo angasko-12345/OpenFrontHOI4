@@ -1,10 +1,20 @@
-import { PlayerInfo, PlayerType } from "@openfront/engine-api/game/GameTypes";
+import {
+  PlayerInfo,
+  PlayerType,
+  UnitType,
+} from "@openfront/engine-api/game/GameTypes";
 import { GameID } from "@openfront/engine-api/Schemas";
 import {
   advanceSecond,
   newNationState,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  CIV_GOLD_CAP,
+  CIV_GOLD_PERMILLE,
+  civGoldPermille,
+  civilianFactories,
+  planTrade,
+  withImports,
   DOMESTIC_RESOURCE,
   OIL_SHORTAGE_LOSS,
   STEEL_FLOOR_PERMILLE,
@@ -16,7 +26,12 @@ import {
   tileHash,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
+  aiJustifyTarget,
+  newWarState,
+} from "@openfront/engine-lib/game/GrandStrategyWar";
+import {
   GrandStrategyExecution,
+  GrandStrategyExecutionSnapshot,
   grandStrategyOf,
 } from "@openfront/engine/execution/GrandStrategyExecution";
 import { SpawnExecution } from "@openfront/engine/execution/SpawnExecution";
@@ -118,5 +133,86 @@ describe("GrandStrategyExecution resources", () => {
     const s = gs.stateOf(a)!;
     expect(s.steelDeposits + s.oilDeposits).toBe(Math.min(5, all.length));
     expect(s.milFactories).toBeGreaterThan(0);
+  });
+
+  test("civilian factories import shortfalls and raise gold", () => {
+    const gs = grandStrategyOf(game)!;
+    for (let i = 0; i < 10; i++) game.executeNextTick();
+    const s = gs.stateOf(a)!;
+    expect(s.civFactories).toBeGreaterThanOrEqual(1);
+    const base = gs.adjustGold(a, 1000n);
+    a.buildUnit(UnitType.City, a.spawnTile()!, {});
+    for (let i = 0; i < 400; i++) game.executeNextTick();
+    expect(s.civFactories).toBeGreaterThan(1);
+    // A factory raises steel need past the home supply; civilians buy it.
+    const free = s.civFactories;
+    expect(s.importSteel).toBe(0);
+    a.buildUnit(UnitType.Factory, game.ref(52, 50), {});
+    for (let i = 0; i < 400; i++) game.executeNextTick();
+    expect(s.milFactories).toBeGreaterThan(4);
+    expect(s.importSteel).toBeGreaterThan(0);
+    expect(s.civFactories).toBe(free);
+    expect(gs.adjustGold(a, 1000n)).toBeGreaterThanOrEqual(base - 200n);
+  });
+});
+
+describe("GrandStrategyEconomy stage B: civilian factories and trade", () => {
+  test("civilian factories from land and cities, scaled by economy law", () => {
+    expect(civilianFactories(0, 0, "partial_mobilization")).toBe(1);
+    expect(civilianFactories(2, 9000, "partial_mobilization")).toBe(1 + 3 + 4);
+    expect(civilianFactories(2, 9000, "civilian_economy_law")).toBe(10);
+    expect(civilianFactories(2, 9000, "war_economy_law")).toBe(6);
+    expect(civilianFactories(2, 9000, "total_mobilization")).toBe(4);
+    expect(civilianFactories(0, 0, "unknown_law")).toBe(1);
+  });
+
+  test("trade buys steel first, two units per civilian factory", () => {
+    const b = { steel: 1, oil: 1, steelNeeded: 6, oilNeeded: 4 };
+    // Short 5 steel (3 civ) and 3 oil (2 civ).
+    expect(planTrade(b, 10)).toEqual({ steel: 5, oil: 3, civUsed: 5 });
+    expect(planTrade(b, 4)).toEqual({ steel: 5, oil: 2, civUsed: 4 });
+    expect(planTrade(b, 2)).toEqual({ steel: 4, oil: 0, civUsed: 2 });
+    expect(planTrade(b, 0)).toEqual({ steel: 0, oil: 0, civUsed: 0 });
+    const full = { steel: 9, oil: 9, steelNeeded: 6, oilNeeded: 4 };
+    expect(planTrade(full, 10)).toEqual({ steel: 0, oil: 0, civUsed: 0 });
+    const after = withImports(b, planTrade(b, 10));
+    expect(steelProductionPermille(after)).toBe(1000);
+    expect(oilLossPermille(after)).toBe(1000);
+  });
+
+  test("free civilian factories raise gold income, capped", () => {
+    expect(civGoldPermille(0)).toBe(0);
+    expect(civGoldPermille(4)).toBe(4 * CIV_GOLD_PERMILLE);
+    expect(civGoldPermille(1000)).toBe(CIV_GOLD_CAP);
+    expect(civGoldPermille(-3)).toBe(0);
+  });
+
+  test("AI short of resources plans a war on the richest deposits", () => {
+    const w = newWarState();
+    const c = [
+      { id: 1, tiles: 9000, attacking: false, deposits: 0 },
+      { id: 2, tiles: 3000, attacking: false, deposits: 4 },
+      { id: 3, tiles: 5000, attacking: false, deposits: 4 },
+    ];
+    expect(aiJustifyTarget(w, c)).toBe(1);
+    expect(aiJustifyTarget(w, c, true)).toBe(3);
+    // A war already under way still comes first.
+    const att = c.map((x) => (x.id === 1 ? { ...x, attacking: true } : x));
+    expect(aiJustifyTarget(w, att, true)).toBe(1);
+    // Nobody holds deposits: fall back to the largest.
+    const none = c.map((x) => ({ ...x, deposits: 0 }));
+    expect(aiJustifyTarget(w, none, true)).toBe(1);
+  });
+
+  test("snapshot v6 migration adds trade fields", () => {
+    const m = GrandStrategyExecutionSnapshot.migrations;
+    const out = m[5]({ initialized: true, states: [{ id: 1 }] }) as {
+      states: Record<string, unknown>[];
+    };
+    expect(out.states[0]).toMatchObject({
+      civFactories: 0,
+      importSteel: 0,
+      importOil: 0,
+    });
   });
 });

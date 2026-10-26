@@ -87,6 +87,8 @@ test.skipIf(!process.env.PT_RUN)(
           focus: s?.focus ?? null,
           // M5: deposits held and military factories (need = f/2 steel, f/3 oil).
           res: s ? [s.steelDeposits, s.oilDeposits, s.milFactories] : null,
+          // M5 stage B: civilian factories, steel and oil imported.
+          civ: s ? [s.civFactories, s.importSteel, s.importOil] : null,
         };
       });
       out.push({

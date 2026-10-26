@@ -100,3 +100,83 @@ export function oilLossPermille(b: ResourceBalance): number {
   const c = coveredPermille(b.oil, b.oilNeeded);
   return 1000 + Math.floor((OIL_SHORTAGE_LOSS * (1000 - c)) / 1000);
 }
+
+// ---------------------------------------------------------------------------
+// M5 stage B: civilian factories and trade.
+//
+// Civilian factories are a second pool next to the military ones (which keep
+// their M1 formula, so equipment output is unchanged). They come from land
+// and City levels, scaled by the economy law. Each second they first pay for
+// imports of whatever steel or oil the military factories lack, and every
+// civilian factory left over adds to gold income.
+
+/** Civilian factories every nation has. */
+export const BASE_CIV_FACTORIES = 1;
+/** One civilian factory per this many tiles owned. */
+export const TILES_PER_CIV_FACTORY = 3000;
+/** Civilian factories per City level. */
+export const CIV_FACTORIES_PER_CITY_LEVEL = 2;
+/** Resource units one civilian factory buys per second. */
+export const IMPORT_UNITS_PER_CIV = 2;
+/** Gold income per free civilian factory, per-mille. */
+export const CIV_GOLD_PERMILLE = 15;
+/** Most gold income free civilian factories can add, per-mille. */
+export const CIV_GOLD_CAP = 250;
+
+/** Civilian factory count scaling by economy law, per-mille. */
+export const CIV_LAW_PERMILLE: Readonly<Record<string, number>> = {
+  civilian_economy_law: 1250,
+  partial_mobilization: 1000,
+  war_economy_law: 750,
+  total_mobilization: 500,
+};
+
+export function civilianFactories(
+  cityLevels: number,
+  tilesOwned: number,
+  economyLaw: string,
+): number {
+  const raw =
+    BASE_CIV_FACTORIES +
+    Math.floor(Math.max(0, tilesOwned) / TILES_PER_CIV_FACTORY) +
+    Math.max(0, cityLevels) * CIV_FACTORIES_PER_CITY_LEVEL;
+  return Math.floor((raw * (CIV_LAW_PERMILLE[economyLaw] ?? 1000)) / 1000);
+}
+
+export interface TradePlan {
+  /** Units bought this second. */
+  steel: number;
+  oil: number;
+  /** Civilian factories spent on imports. */
+  civUsed: number;
+}
+
+/**
+ * Buy what the military factories lack, steel first, one civilian factory
+ * per IMPORT_UNITS_PER_CIV units, as far as the civilian factories go.
+ */
+export function planTrade(b: ResourceBalance, civFactories: number): TradePlan {
+  let civ = Math.max(0, civFactories);
+  const buy = (short: number): number => {
+    if (short <= 0 || civ <= 0) return 0;
+    const used = Math.min(civ, Math.ceil(short / IMPORT_UNITS_PER_CIV));
+    civ -= used;
+    return Math.min(short, used * IMPORT_UNITS_PER_CIV);
+  };
+  const steel = buy(b.steelNeeded - b.steel);
+  const oil = buy(b.oilNeeded - b.oil);
+  return { steel, oil, civUsed: Math.max(0, civFactories) - civ };
+}
+
+/** The balance after imports arrive. */
+export function withImports(b: ResourceBalance, t: TradePlan): ResourceBalance {
+  return { ...b, steel: b.steel + t.steel, oil: b.oil + t.oil };
+}
+
+/** Gold income modifier, per-mille, from civilian factories left free. */
+export function civGoldPermille(freeCivFactories: number): number {
+  return Math.min(
+    CIV_GOLD_CAP,
+    Math.max(0, freeCivFactories) * CIV_GOLD_PERMILLE,
+  );
+}

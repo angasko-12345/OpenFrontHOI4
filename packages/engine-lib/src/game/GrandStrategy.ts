@@ -249,7 +249,7 @@ export const LAWS: readonly LawDef[] = [
     id: "civilian_economy_law",
     category: "economy",
     name: "Civilian Economy",
-    description: "Factory output -15%, gold +10%.",
+    description: "Factory output -15%, gold +10%, civilian factories +25%.",
     minWarSupport: 0,
     effects: { production: -150, gold: 100 },
   },
@@ -265,7 +265,7 @@ export const LAWS: readonly LawDef[] = [
     id: "war_economy_law",
     category: "economy",
     name: "War Economy",
-    description: "Factory output +20%, gold -10%.",
+    description: "Factory output +20%, gold -10%, civilian factories -25%.",
     minWarSupport: 600,
     effects: { production: 200, gold: -100 },
   },
@@ -273,7 +273,8 @@ export const LAWS: readonly LawDef[] = [
     id: "total_mobilization",
     category: "economy",
     name: "Total Mobilization",
-    description: "Factory output +35%, gold -20%, manpower -5%.",
+    description:
+      "Factory output +35%, gold -20%, manpower -5%, civilian factories -50%.",
     minWarSupport: 800,
     effects: { production: 350, gold: -200, manpower: -50 },
   },
@@ -447,6 +448,10 @@ export interface NationGsState {
   oilDeposits: number;
   /** M5: military factories at the last second boundary. */
   milFactories: number;
+  /** M5 stage B: civilian factories, and steel and oil imported, last second. */
+  civFactories: number;
+  importSteel: number;
+  importOil: number;
 }
 
 export interface TimedEntry {
@@ -507,6 +512,9 @@ export function newNationState(startEquipment: number): NationGsState {
     steelDeposits: 0,
     oilDeposits: 0,
     milFactories: 0,
+    civFactories: 0,
+    importSteel: 0,
+    importOil: 0,
   };
 }
 

@@ -33,9 +33,14 @@ import {
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  civGoldPermille,
+  civilianFactories,
   depositAt,
+  IMPORT_UNITS_PER_CIV,
   oilLossPermille,
+  planTrade,
   resourceBalance,
+  ResourceBalance,
   steelProductionPermille,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
@@ -251,7 +256,10 @@ export class GrandStrategyExecution implements Execution {
   }
 
   adjustGold(player: Player, base: bigint): bigint {
-    const g = this.modifiers(player).gold;
+    const s = this.stateOf(player);
+    const g =
+      this.modifiers(player).gold +
+      (s === null ? 0 : civGoldPermille(freeCivFactories(s)));
     if (g === 0) return base;
     const scaled = (base * BigInt(1000 + g)) / 1000n;
     return scaled < 0n ? 0n : scaled;
@@ -282,12 +290,7 @@ export class GrandStrategyExecution implements Execution {
       as === null ? BASE_WAR_SUPPORT : as.warSupport,
     );
     const dMult = defenderLossMultiplier(dEquipped);
-    const oilMult =
-      as === null
-        ? 1000
-        : oilLossPermille(
-            resourceBalance(as.steelDeposits, as.oilDeposits, as.milFactories),
-          );
+    const oilMult = as === null ? 1000 : oilLossPermille(balanceOf(as));
     const aw = this.warOf(attacker);
     const warMult =
       aw === null || !this.warLayer
@@ -364,11 +367,22 @@ export class GrandStrategyExecution implements Execution {
       s.steelDeposits = h?.steel ?? 0;
       s.oilDeposits = h?.oil ?? 0;
       s.milFactories = militaryFactories(factoryLevels, p.numTilesOwned());
-      const res = resourceBalance(
-        s.steelDeposits,
-        s.oilDeposits,
-        s.milFactories,
+      const cityLevels = p
+        .units(UnitType.City)
+        .filter((u) => !u.isUnderConstruction())
+        .reduce((a, u) => a + u.level(), 0);
+      s.civFactories = civilianFactories(
+        cityLevels,
+        p.numTilesOwned(),
+        s.economyLaw,
       );
+      const trade = planTrade(
+        resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories),
+        s.civFactories,
+      );
+      s.importSteel = trade.steel;
+      s.importOil = trade.oil;
+      const res = balanceOf(s);
       advanceSecond(s, {
         factoryStructureLevels: factoryLevels,
         tilesOwned: p.numTilesOwned(),
@@ -396,6 +410,10 @@ export class GrandStrategyExecution implements Execution {
         advisors: [...s.advisors],
         activeDecisions: copyTimers(s.activeDecisions),
         decisionCooldowns: copyTimers(s.decisionCooldowns),
+        civFactories: s.civFactories,
+        civFree: freeCivFactories(s),
+        importSteel: s.importSteel,
+        importOil: s.importOil,
         steel: res.steel,
         steelNeeded: res.steelNeeded,
         oil: res.oil,
@@ -511,16 +529,22 @@ export class GrandStrategyExecution implements Execution {
       .map((id) => mg.playerBySmallID(id))
       .filter((n): n is Player => n.isPlayer())
       .filter((n) => this.validTarget(p, n as Player))
-      .map((n) => ({
-        id: n.smallID(),
-        tiles: n.numTilesOwned(),
-        attacking: attacking.has(n.smallID()),
-      }));
+      .map((n) => {
+        const ns = this.stateOf(n as Player);
+        return {
+          id: n.smallID(),
+          tiles: n.numTilesOwned(),
+          attacking: attacking.has(n.smallID()),
+          deposits: ns === null ? 0 : ns.steelDeposits + ns.oilDeposits,
+        };
+      });
     const urgent = candidates.some((c) => c.attacking && !hasWarGoal(w, c.id));
     // Only justify ahead of time out of spare political power.
     if (!urgent && (w.warGoals.length > 0 || s.politicalPower < AI_PP_RESERVE))
       return;
-    const target = aiJustifyTarget(w, candidates);
+    const raw = resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories);
+    const short = raw.steel < raw.steelNeeded || raw.oil < raw.oilNeeded;
+    const target = aiJustifyTarget(w, candidates, short);
     if (target === null) return;
     const t = mg.playerBySmallID(target);
     if (t.isPlayer()) this.justifyWar(p, t as Player);
@@ -557,6 +581,9 @@ export class GrandStrategyExecution implements Execution {
         steelDeposits: s.steelDeposits,
         oilDeposits: s.oilDeposits,
         milFactories: s.milFactories,
+        civFactories: s.civFactories,
+        importSteel: s.importSteel,
+        importOil: s.importOil,
         ...warSnapshot(this.wars.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
@@ -586,6 +613,9 @@ export class GrandStrategyExecution implements Execution {
           steelDeposits: n.steelDeposits,
           oilDeposits: n.oilDeposits,
           milFactories: n.milFactories,
+          civFactories: n.civFactories,
+          importSteel: n.importSteel,
+          importOil: n.importOil,
         },
       ]),
     );
@@ -651,6 +681,9 @@ const GrandStrategyStateSchema = z.object({
       steelDeposits: zInt(),
       oilDeposits: zInt(),
       milFactories: zInt(),
+      civFactories: zInt(),
+      importSteel: zInt(),
+      importOil: zInt(),
       occupied: zInt(),
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
@@ -662,9 +695,19 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 5,
+  version: 6,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v6 added civilian factories and trade (recomputed at the next second).
+    5: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        civFactories: 0,
+        importSteel: 0,
+        importOil: 0,
+      })),
+    }),
     // v5 added strategic resources (counted again at the next second).
     4: (d: { initialized: boolean; states: object[] }) => ({
       ...d,
@@ -712,3 +755,17 @@ export const GrandStrategyExecutionSnapshot = execSnapshotType({
   },
   cls: () => GrandStrategyExecution,
 });
+
+/** Steel and oil available to a nation last second, imports included. */
+function balanceOf(s: NationGsState): ResourceBalance {
+  const b = resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories);
+  return { ...b, steel: b.steel + s.importSteel, oil: b.oil + s.importOil };
+}
+
+/** Civilian factories not spent on imports last second. */
+function freeCivFactories(s: NationGsState): number {
+  const used =
+    Math.ceil(s.importSteel / IMPORT_UNITS_PER_CIV) +
+    Math.ceil(s.importOil / IMPORT_UNITS_PER_CIV);
+  return Math.max(0, s.civFactories - used);
+}

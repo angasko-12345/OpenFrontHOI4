@@ -170,7 +170,12 @@ export interface GrandStrategyUpdate {
   activeDecisions: { id: string; seconds: number }[];
   /** Decisions on cooldown and their seconds left. */
   decisionCooldowns: { id: string; seconds: number }[];
-  /** M5: steel and oil available per second, and what factories need. */
+  /** M5 stage B: civilian factories, those left after imports, and imports. */
+  civFactories: number;
+  civFree: number;
+  importSteel: number;
+  importOil: number;
+  /** M5: steel and oil available per second (imports included), and need. */
   steel: number;
   steelNeeded: number;
   oil: number;
