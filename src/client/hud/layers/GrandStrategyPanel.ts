@@ -27,6 +27,14 @@ import {
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  canResearch,
+  ERA_ADVANCE,
+  MAX_ERA,
+  RESEARCH_SLOTS,
+  techById,
+  TECHS,
+} from "@openfront/engine-lib/game/GrandStrategyResearch";
+import {
   JUSTIFY_COST,
   JUSTIFY_SECONDS,
   MAX_WAR_GOALS,
@@ -58,8 +66,13 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   /** Whole panel expanded. Phones start collapsed to a small chip. */
   @state() private expanded =
     typeof window === "undefined" || window.innerWidth >= 640;
-  @state() private section: "none" | "focuses" | "laws" | "decisions" | "war" =
-    "none";
+  @state() private section:
+    | "none"
+    | "focuses"
+    | "laws"
+    | "decisions"
+    | "war"
+    | "tech" = "none";
 
   createRenderRoot() {
     return this;
@@ -150,7 +163,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     }));
   }
 
-  private toggle(section: "focuses" | "laws" | "decisions" | "war") {
+  private toggle(section: "focuses" | "laws" | "decisions" | "war" | "tech") {
     this.section = this.section === section ? "none" : section;
   }
 
@@ -180,6 +193,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       importOil: d.importOil,
       artillery: d.artillery,
       artilleryShare: d.artilleryShare,
+      researched: d.researched,
+      research: d.research.map((r) => ({ id: r.id, progress: r.progress })),
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -274,6 +289,23 @@ export class GrandStrategyPanel extends LitElement implements Controller {
                 d.justifiedAgainstMe.length > 0 && this.section !== "war"
                   ? html`<span
                       class="ml-1 inline-block h-2 w-2 rounded-full bg-red-500"
+                    ></span>`
+                  : nothing
+              }
+            </button>
+            <button
+              class="min-h-9 rounded px-3 sm:min-h-0 sm:px-2 ${
+                this.section === "tech"
+                  ? "bg-blue-800"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }"
+              @click=${() => this.toggle("tech")}
+            >
+              Tech
+              ${
+                d.research.length < RESEARCH_SLOTS && this.section !== "tech"
+                  ? html`<span
+                      class="ml-1 inline-block h-2 w-2 rounded-full bg-yellow-400"
                     ></span>`
                   : nothing
               }
@@ -515,6 +547,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
             : nothing
         }
         ${this.section === "war" ? this.renderWar(d) : nothing}
+        ${this.section === "tech" ? this.renderTech(d, state) : nothing}
         ${
           this.section === "focuses"
             ? html`<div class="mt-2 space-y-1">
@@ -556,6 +589,69 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         }
       </div>
     `;
+  }
+
+  private renderTech(d: GrandStrategyUpdate, state: NationGsState) {
+    const slotPct = (p: number, c: number) =>
+      `${Math.min(100, Math.floor((p * 100) / Math.max(1, c)))}%`;
+    return html`<div class="mt-2 space-y-1">
+      <div class="font-semibold">
+        Era ${d.era}
+        <span class="float-right font-normal"
+          >${d.research.length} / ${RESEARCH_SLOTS} slots</span
+        >
+      </div>
+      ${d.research.map((r) => {
+        const t = techById(r.id);
+        return html`<div
+          class="rounded bg-blue-900/80 px-3 py-2 sm:px-2 sm:py-1"
+        >
+          ${t?.name ?? r.id}
+          <span class="float-right">${slotPct(r.progress, r.cost)}</span>
+        </div>`;
+      })}
+      ${TECHS.filter((t) => t.era <= d.era).map((t) => {
+        const check = canResearch(state, t.id);
+        const done = check === "researched";
+        if (check === "in_progress") return nothing;
+        const enabled = check === "ok";
+        return html`<button
+          class="block w-full rounded px-3 py-2 text-left sm:px-2 sm:py-1 ${
+            done
+              ? "bg-green-900/70"
+              : enabled
+                ? "bg-gray-700 hover:bg-gray-600"
+                : "bg-gray-900/60 text-gray-500"
+          }"
+          ?disabled=${!enabled}
+          @click=${() => this.act(t.id)}
+        >
+          <div class="font-semibold">
+            ${t.name}
+            <span class="float-right font-normal">${t.seconds}s</span>
+          </div>
+          <div class="opacity-80">${t.description}</div>
+          ${
+            check === "exclusive"
+              ? html`<div class="opacity-60">Another doctrine chosen</div>`
+              : check === "missing_prerequisite"
+                ? html`<div class="opacity-60">
+                    Needs:
+                    ${t.requires.map((r) => techById(r)?.name).join(", ")}
+                  </div>`
+                : nothing
+          }
+        </button>`;
+      })}
+      ${
+        d.era < MAX_ERA
+          ? html`<div class="opacity-60">
+              Research ${ERA_ADVANCE} era ${d.era} technologies to reach era
+              ${d.era + 1}. Technologies most nations know cost 30% less.
+            </div>`
+          : nothing
+      }
+    </div>`;
   }
 
   private renderWar(d: GrandStrategyUpdate) {

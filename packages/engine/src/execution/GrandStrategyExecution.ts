@@ -46,6 +46,14 @@ import {
   steelProductionPermille,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
+  advanceResearch,
+  aiResearch,
+  eraOf,
+  RESEARCH_SLOTS,
+  techById,
+  techCost,
+} from "@openfront/engine-lib/game/GrandStrategyResearch";
+import {
   addOccupied,
   advanceWarSecond,
   aiJustifyTarget,
@@ -117,7 +125,7 @@ export class GrandStrategyExecution implements Execution {
    */
   private ablated?: Set<string>;
 
-  ablate(part: "civgold" | "trade" | "artillery"): void {
+  ablate(part: "civgold" | "trade" | "artillery" | "research"): void {
     (this.ablated ??= new Set()).add(part);
   }
 
@@ -373,6 +381,7 @@ export class GrandStrategyExecution implements Execution {
           mg.numLandTiles(),
         );
     const held = this.countDeposits(mg);
+    const knownBy = this.on("research") ? this.techSpread(players) : () => 0;
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
@@ -383,6 +392,19 @@ export class GrandStrategyExecution implements Execution {
         if (choice.focus !== null) startFocus(s, choice.focus);
         if (choice.law !== null) setLaw(s, choice.law);
         if (choice.action !== null) takeAction(s, choice.action);
+        if (this.on("research")) {
+          // Fill free slots; bounded so a rule bug can never spin forever.
+          for (let i = 0; i < RESEARCH_SLOTS; i++) {
+            const next = aiResearch(s, aiPersonalityFor(p.smallID()));
+            if (next === null || takeAction(s, next) !== "ok") break;
+          }
+        }
+      }
+      if (this.on("research")) {
+        advanceResearch(s, knownBy);
+      } else {
+        s.research = [];
+        s.researched = [];
       }
       const war = advanceWarSecond(w, p.numTilesOwned());
       if (war.warSupportDelta !== 0) {
@@ -460,6 +482,16 @@ export class GrandStrategyExecution implements Execution {
         artillery: s.artillery,
         artilleryShare: s.artilleryShare,
         artillerySupport: equippedPermille(s.artillery, p.troops()),
+        era: eraOf(s.researched),
+        researched: [...s.researched],
+        research: s.research.map((r) => {
+          const t = techById(r.id);
+          return {
+            id: r.id,
+            progress: r.progress,
+            cost: t === undefined ? 1 : techCost(t, knownBy(r.id)),
+          };
+        }),
         steel: res.steel,
         steelNeeded: res.steelNeeded,
         oil: res.oil,
@@ -489,6 +521,24 @@ export class GrandStrategyExecution implements Execution {
         this.wars.delete(id);
       }
     }
+  }
+
+  /**
+   * Per technology, the per-mille of Grand Strategy players (other than the
+   * asker, who does not know it yet) that already know it.
+   */
+  private techSpread(players: readonly Player[]): (id: string) => number {
+    const counts = new Map<string, number>();
+    let total = 0;
+    for (const p of players) {
+      if (p.type() === PlayerType.Bot || !p.isAlive()) continue;
+      const s = this.states.get(p.smallID());
+      if (s === undefined) continue;
+      total++;
+      for (const id of s.researched) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const others = Math.max(1, total - 1);
+    return (id) => Math.floor(((counts.get(id) ?? 0) * 1000) / others);
   }
 
   /** Deposit tiles on the map: built once from terrain, never saved. */
@@ -626,6 +676,8 @@ export class GrandStrategyExecution implements Execution {
         importOil: s.importOil,
         artillery: s.artillery,
         artilleryShare: s.artilleryShare,
+        researched: [...s.researched],
+        research: s.research.map((r) => ({ ...r })),
         ...warSnapshot(this.wars.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
@@ -660,6 +712,8 @@ export class GrandStrategyExecution implements Execution {
           importOil: n.importOil,
           artillery: n.artillery,
           artilleryShare: n.artilleryShare,
+          researched: [...n.researched],
+          research: n.research.map((r) => ({ ...r })),
         },
       ]),
     );
@@ -730,6 +784,8 @@ const GrandStrategyStateSchema = z.object({
       importOil: zInt(),
       artillery: zInt(),
       artilleryShare: zInt(),
+      researched: z.array(z.string()),
+      research: z.array(z.object({ id: z.string(), progress: zInt() })),
       occupied: zInt(),
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
@@ -741,9 +797,14 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 7,
+  version: 8,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v8 added research.
+    7: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({ ...n, researched: [], research: [] })),
+    }),
     // v7 added artillery and production lines.
     6: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

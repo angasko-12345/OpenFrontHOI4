@@ -441,13 +441,14 @@ describe("GrandStrategy snapshot migration", () => {
       ],
     });
     const parsed = GrandStrategyExecutionSnapshot.schema.parse(
-      m[6](m[5](m[4](m[3](m[2](v2))))),
+      m[7](m[6](m[5](m[4](m[3](m[2](v2)))))),
     );
     expect(parsed.coalitionLeader).toBeNull();
     expect(parsed.states[0].steelDeposits).toBe(0);
     expect(parsed.states[0].milFactories).toBe(0);
     expect(parsed.states[0].artillery).toBe(0);
     expect(parsed.states[0].artilleryShare).toBe(0);
+    expect(parsed.states[0].researched).toEqual([]);
     expect(parsed.states[0].occupied).toBe(0);
     expect(parsed.states[0].warGoals).toEqual([]);
     expect(parsed.states[0].advisors).toEqual([]);

@@ -248,13 +248,37 @@ export const PRODUCTION_LINE_IDS = [
 ] as const;
 export type ProductionLineID = (typeof PRODUCTION_LINE_IDS)[number];
 
+/** Grand Strategy technologies (definitions in engine-lib GrandStrategyResearch). */
+export const TECH_IDS = [
+  "basic_machine_tools",
+  "improved_workshops",
+  "infantry_weapons",
+  "field_fortifications",
+  "propaganda_bureau",
+  "maneuver_doctrine",
+  "firepower_doctrine",
+  "defense_doctrine",
+  "assembly_lines",
+  "civil_administration",
+  "improved_artillery",
+  "motorization",
+  "rapid_exploitation",
+  "concentrated_fire",
+  "entrenchment",
+  "automation",
+  "mechanized_warfare",
+  "total_defense",
+] as const;
+export type TechID = (typeof TECH_IDS)[number];
+
 /** Everything the `gs_action` intent can carry. */
 export const GS_ACTION_IDS = [
   ...DECISION_IDS,
   ...ADVISOR_IDS,
   ...PRODUCTION_LINE_IDS,
+  ...TECH_IDS,
 ] as const;
-export type GsActionID = DecisionID | AdvisorID | ProductionLineID;
+export type GsActionID = DecisionID | AdvisorID | ProductionLineID | TechID;
 
 export enum UnitType {
   TransportShip = "Transport",

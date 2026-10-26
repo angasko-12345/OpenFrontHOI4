@@ -180,6 +180,10 @@ export interface GrandStrategyUpdate {
   artilleryShare: number;
   /** Share of the army artillery supports, per-mille. */
   artillerySupport: number;
+  /** M6: era, researched technologies, and slots in progress. */
+  era: number;
+  researched: string[];
+  research: { id: string; progress: number; cost: number }[];
   /** M5: steel and oil available per second (imports included), and need. */
   steel: number;
   steelNeeded: number;

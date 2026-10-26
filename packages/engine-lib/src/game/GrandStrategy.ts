@@ -26,6 +26,12 @@ import {
   LAW_IDS,
   LawID,
 } from "@openfront/engine-api/game/GameTypes";
+import {
+  addResearchEffects,
+  ResearchSlot,
+  startResearch,
+  techById,
+} from "./GrandStrategyResearch";
 
 /** Modifiers a focus grants, all in per-mille. */
 export interface GsModifiers {
@@ -456,6 +462,9 @@ export interface NationGsState {
   artillery: number;
   /** M5 stage C: share of military output on artillery, per-mille. */
   artilleryShare: number;
+  /** M6: researched technology ids, in order, and the slots in progress. */
+  researched: string[];
+  research: ResearchSlot[];
 }
 
 export interface TimedEntry {
@@ -521,6 +530,8 @@ export function newNationState(startEquipment: number): NationGsState {
     importOil: 0,
     artillery: 0,
     artilleryShare: 0,
+    researched: [],
+    research: [],
   };
 }
 
@@ -548,6 +559,7 @@ export function modifiersOf(state: NationGsState): GsModifiers {
     const d = DECISION_BY_ID.get(e.id);
     if (d !== undefined) addEffects(m, d.effects);
   }
+  addResearchEffects(m, state.researched ?? []);
   return m;
 }
 
@@ -625,7 +637,8 @@ export type ActionCheck =
   | "cooldown"
   | "hired"
   | "no_slots"
-  | "no_political_power";
+  | "no_political_power"
+  | "unavailable";
 
 /** Can the nation take this decision or hire this advisor now? */
 export function canTakeAction(state: NationGsState, id: string): ActionCheck {
@@ -650,6 +663,11 @@ export function takeAction(state: NationGsState, id: string): ActionCheck {
   if (line !== undefined) {
     state.artilleryShare = line;
     return "ok";
+  }
+  if (techById(id) !== undefined) {
+    state.researched ??= [];
+    state.research ??= [];
+    return startResearch(state, id) === "ok" ? "ok" : "unavailable";
   }
   const check = canTakeAction(state, id);
   if (check !== "ok") return check;
