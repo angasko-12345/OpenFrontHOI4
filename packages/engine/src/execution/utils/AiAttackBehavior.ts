@@ -187,6 +187,7 @@ export abstract class AiAttackBehavior {
       this.player.troops() - reserveTroops,
     opponent?: Player,
   ): boolean {
+    if (target.isPlayer() && this.truceWith(target)) return false;
     const troops = this.calculateAttackTroops(target, sendTroops, opponent);
     if (troops === null) {
       return false;
@@ -202,7 +203,13 @@ export abstract class AiAttackBehavior {
     return true;
   }
 
+  /** Grand Strategy truce with `target` (never true in classic games). */
+  protected truceWith(target: Player): boolean {
+    return this.game.config().isAttackLocked(this.player, target);
+  }
+
   protected sendBoatAttack(target: Player): boolean {
+    if (this.truceWith(target)) return false;
     const route = this.boatRoute(target);
     if (route === null || route.blocker !== null) return false;
 

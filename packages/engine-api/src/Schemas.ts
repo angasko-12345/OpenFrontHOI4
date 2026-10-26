@@ -47,6 +47,7 @@ export type Intent =
   | SetFocusIntent
   | SetLawIntent
   | GsActionIntent
+  | PeaceIntent
   | JustifyWarIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
@@ -63,6 +64,7 @@ export type EmbargoAllIntent = z.infer<typeof EmbargoAllIntentSchema>;
 export type SetFocusIntent = z.infer<typeof SetFocusIntentSchema>;
 export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
 export type GsActionIntent = z.infer<typeof GsActionIntentSchema>;
+export type PeaceIntent = z.infer<typeof PeaceIntentSchema>;
 export type JustifyWarIntent = z.infer<typeof JustifyWarIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
@@ -507,6 +509,12 @@ export const JustifyWarIntentSchema = z.object({
   targetID: MappedID,
 });
 
+/** Grand Strategy: offer peace to a nation at war with us, or accept its offer. */
+export const PeaceIntentSchema = z.object({
+  type: z.literal("peace"),
+  targetID: MappedID,
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -626,6 +634,8 @@ export const IntentSchema = z.discriminatedUnion("type", [
   TogglePauseIntentSchema,
   UpdateGameConfigIntentSchema,
   ToggleGameStartTimerIntentSchema,
+  // Appended: earlier union positions keep their wire tags.
+  PeaceIntentSchema,
 ]);
 
 // StampedIntent = Intent with server-stamped clientID (used in turns and execution)

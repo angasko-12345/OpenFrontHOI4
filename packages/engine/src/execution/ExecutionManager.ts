@@ -27,6 +27,7 @@ import { MoveWarshipExecution } from "./MoveWarshipExecution";
 import { NationExecution } from "./NationExecution";
 import { NoOpExecution } from "./NoOpExecution";
 import { PauseExecution } from "./PauseExecution";
+import { PeaceExecution } from "./PeaceExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
 import { SetFocusExecution } from "./SetFocusExecution";
@@ -125,6 +126,8 @@ export class Executor {
         return new GsActionExecution(player, intent.action);
       case "justify_war":
         return new JustifyWarExecution(player, intent.targetID);
+      case "peace":
+        return new PeaceExecution(player, intent.targetID);
       case "build_unit":
         return new ConstructionExecution(
           player,

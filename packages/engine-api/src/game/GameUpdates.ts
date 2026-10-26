@@ -205,6 +205,19 @@ export interface GrandStrategyUpdate {
    * seconds left, and nations that finished one (may build nukes). */
   atomicProjects: { player: string; seconds: number }[];
   atomicPowers: string[];
+  /** M7 stage A: war weariness, per-mille. */
+  weariness: number;
+  /** Nations at war with this one (land changed hands lately): seconds at
+   * war and tiles won / lost in this war. */
+  wars: { target: string; seconds: number; won: number; lost: number }[];
+  /** Peace offers this player made, and seconds each stays open. */
+  peaceOffers: { target: string; seconds: number }[];
+  /** Players offering peace to this player. */
+  peaceOffersToMe: string[];
+  /** Truces (no attacks either way) and seconds left. */
+  truces: { target: string; seconds: number }[];
+  /** Most land held, tiles (capitulation below half of it while at war). */
+  peakTiles: number;
 }
 
 export interface BonusEventUpdate {

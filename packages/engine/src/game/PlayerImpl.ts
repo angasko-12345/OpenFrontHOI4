@@ -1929,6 +1929,8 @@ export class PlayerImpl implements Player {
     player: Player,
     treatAFKFriendly: boolean = false,
   ): boolean {
+    // Grand Strategy truce (no lock is ever installed in classic games).
+    if (this.mg.config().isAttackLocked(this, player)) return false;
     if (this.type() !== PlayerType.Human) {
       // Only human attackers respect PVP immunity
       return !this.isFriendly(player, treatAFKFriendly);

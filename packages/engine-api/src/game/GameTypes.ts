@@ -570,6 +570,8 @@ export enum MessageType {
   RENEW_ALLIANCE,
   // Grand Strategy: a nation started or finished its atomic project.
   ATOMIC_PROJECT,
+  // Grand Strategy: peace offers, truces and capitulations.
+  GS_DIPLOMACY,
 }
 
 // Message categories used for filtering events in the EventsDisplay
@@ -603,6 +605,7 @@ export const MESSAGE_TYPE_CATEGORIES: Record<MessageType, MessageCategory> = {
   [MessageType.ALLIANCE_EXPIRED]: MessageCategory.ALLIANCE,
   [MessageType.RENEW_ALLIANCE]: MessageCategory.ALLIANCE,
   [MessageType.ATOMIC_PROJECT]: MessageCategory.NUKE,
+  [MessageType.GS_DIPLOMACY]: MessageCategory.ALLIANCE,
   [MessageType.DONATION_SENT]: MessageCategory.TRADE,
   [MessageType.DONATION_RECEIVED]: MessageCategory.TRADE,
   [MessageType.CHAT]: MessageCategory.CHAT,

@@ -27,6 +27,12 @@ import {
   LawID,
 } from "@openfront/engine-api/game/GameTypes";
 import {
+  WEARY_ATTACK_LOSS,
+  WEARY_POLITICAL_POWER,
+  WEARY_WAR_SUPPORT,
+  wearinessPermille,
+} from "./GrandStrategyPeace";
+import {
   addResearchEffects,
   ResearchSlot,
   startResearch,
@@ -465,6 +471,11 @@ export interface NationGsState {
   /** M6: researched technology ids, in order, and the slots in progress. */
   researched: string[];
   research: ResearchSlot[];
+  /**
+   * M7 stage A: war weariness, thousandths of a per-mille (see
+   * GrandStrategyPeace). Absent = 0 (states built before M7).
+   */
+  weariness?: number;
 }
 
 export interface TimedEntry {
@@ -532,6 +543,7 @@ export function newNationState(startEquipment: number): NationGsState {
     artilleryShare: 0,
     researched: [],
     research: [],
+    weariness: 0,
   };
 }
 
@@ -560,7 +572,17 @@ export function modifiersOf(state: NationGsState): GsModifiers {
     if (d !== undefined) addEffects(m, d.effects);
   }
   addResearchEffects(m, state.researched ?? []);
+  addWearinessEffects(m, state.weariness);
   return m;
+}
+
+/** M7 stage A: war weariness raises attack losses, cuts PP and war support. */
+function addWearinessEffects(m: GsModifiers, weariness?: number): void {
+  const w = wearinessPermille(weariness);
+  if (w === 0) return;
+  m.attackLoss += Math.trunc((w * WEARY_ATTACK_LOSS) / 1000);
+  m.politicalPower += Math.trunc((w * WEARY_POLITICAL_POWER) / 1000);
+  m.warSupport += Math.trunc((w * WEARY_WAR_SUPPORT) / 1000);
 }
 
 /** Troop-cap modifier (per-mille) a state's focuses and laws give. */

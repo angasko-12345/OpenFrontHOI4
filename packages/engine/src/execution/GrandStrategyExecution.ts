@@ -50,6 +50,26 @@ import {
   steelProductionPermille,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
+  addOffer,
+  addTruce,
+  advancePeaceTimers,
+  advanceWeariness,
+  aiAcceptsPeace,
+  aiPeaceTarget,
+  capitulationTarget,
+  enemyEntry,
+  hasOffered,
+  hasTruce,
+  longWars,
+  losingTo,
+  NationPeaceState,
+  newPeaceState,
+  recordConquest,
+  TimedTarget,
+  TRUCE_SECONDS,
+  wearinessPermille,
+} from "@openfront/engine-lib/game/GrandStrategyPeace";
+import {
   advanceResearch,
   aiResearch,
   ATOMIC_PROJECT,
@@ -101,6 +121,15 @@ export function grandStrategyOf(mg: Game): GrandStrategyExecution | null {
   return registry.get(mg) ?? null;
 }
 
+export type PeaceCheck =
+  | "offered"
+  | "accepted"
+  | "already_offered"
+  | "not_at_war"
+  | "truce"
+  | "invalid_target"
+  | "disabled";
+
 export interface CombatAdjustment {
   attackerTroopLoss: number;
   defenderTroopLoss: number;
@@ -130,12 +159,19 @@ export class GrandStrategyExecution implements Execution {
    * absent = on, never saved. "civgold" = gold from free civilian
    * factories, "trade" = automatic imports, "artillery" = production lines,
    * "research" = M6 research, "atomic" = the M6 stage C nuclear gate
-   * (nukes buildable without the atomic project; AI skips the project).
+   * (nukes buildable without the atomic project; AI skips the project),
+   * "weariness" = M7 stage A (war weariness, capitulation, peace, truces).
    */
   private ablated?: Set<string>;
 
   ablate(
-    part: "civgold" | "trade" | "artillery" | "research" | "atomic",
+    part:
+      | "civgold"
+      | "trade"
+      | "artillery"
+      | "research"
+      | "atomic"
+      | "weariness",
   ): void {
     (this.ablated ??= new Set()).add(part);
   }
@@ -148,6 +184,8 @@ export class GrandStrategyExecution implements Execution {
   private oilTiles?: Uint32Array;
   /** Small id of the coalition target, if one nation dominates. */
   private coalitionLeader: number | null = null;
+  /** M7 stage A: wars, truces, peace offers and peak land, by small id. */
+  private peace = new Map<number, NationPeaceState>();
 
   init(mg: Game, _ticks: number): void {
     this.attach(mg);
@@ -172,6 +210,23 @@ export class GrandStrategyExecution implements Execution {
     });
     // M6 stage C: nuclear weapons wait for the atomic project.
     mg.config().setUnitLock((p, type) => this.nukeLocked(p, type));
+    // M7 stage A: truces forbid attacks between the pair. Read-only.
+    mg.config().setAttackLock((a, b) => this.truceLocked(a, b));
+  }
+
+  /** Whether a truce forbids `a` and `b` from attacking each other. */
+  private truceLocked(
+    a: { type(): PlayerType; smallID(): number },
+    b: { type(): PlayerType; smallID(): number },
+  ): boolean {
+    if (!this.on("weariness")) return false;
+    if (a.type() === PlayerType.Bot || b.type() === PlayerType.Bot) {
+      return false;
+    }
+    const pa = this.peace.get(a.smallID());
+    if (pa !== undefined && hasTruce(pa, b.smallID())) return true;
+    const pb = this.peace.get(b.smallID());
+    return pb !== undefined && hasTruce(pb, a.smallID());
   }
 
   /**
@@ -214,6 +269,85 @@ export class GrandStrategyExecution implements Execution {
     return w;
   }
 
+  /** M7 stage A state (wars, truces, offers) for a participating player. */
+  peaceOf(player: Player): NationPeaceState | null {
+    if (player.type() === PlayerType.Bot) return null;
+    let s = this.peace.get(player.smallID());
+    if (s === undefined) {
+      this.stateOf(player);
+      s = newPeaceState();
+      this.peace.set(player.smallID(), s);
+    }
+    return s;
+  }
+
+  /**
+   * Offer peace to `target`, or accept its offer. Needs a war between the
+   * two (land changed hands lately) and no truce already.
+   */
+  offerPeace(player: Player, target: Player): PeaceCheck {
+    if (!this.on("weariness")) return "disabled";
+    if (
+      target === player ||
+      !target.isAlive() ||
+      !player.isAlive() ||
+      target.type() === PlayerType.Bot ||
+      player.type() === PlayerType.Bot
+    ) {
+      return "invalid_target";
+    }
+    const mine = this.peaceOf(player)!;
+    const theirs = this.peaceOf(target)!;
+    if (
+      hasTruce(mine, target.smallID()) ||
+      hasTruce(theirs, player.smallID())
+    ) {
+      return "truce";
+    }
+    if (hasOffered(theirs, player.smallID())) {
+      this.makePeace(player, target, "peace");
+      return "accepted";
+    }
+    if (
+      enemyEntry(mine, target.smallID()) === undefined &&
+      enemyEntry(theirs, player.smallID()) === undefined
+    ) {
+      return "not_at_war";
+    }
+    if (hasOffered(mine, target.smallID())) return "already_offered";
+    addOffer(mine, target.smallID());
+    if (target.type() === PlayerType.Human) {
+      this.mg?.displayMessage(
+        "events_display.gs_peace_offered",
+        MessageType.GS_DIPLOMACY,
+        target.id(),
+        undefined,
+        { name: player.displayName() },
+      );
+    }
+    return "offered";
+  }
+
+  /** Truce between two nations, from a peace deal or a capitulation. */
+  private makePeace(a: Player, b: Player, why: "peace" | "capitulation"): void {
+    addTruce(this.peaceOf(a)!, a.smallID(), this.peaceOf(b)!, b.smallID());
+    this.mg?.displayMessage(
+      why === "peace"
+        ? "events_display.gs_peace_signed"
+        : "events_display.gs_capitulated",
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      {
+        name: a.displayName(),
+        other: b.displayName(),
+        minutes: Math.floor(TRUCE_SECONDS / 60),
+      },
+      undefined,
+      a.id(),
+    );
+  }
+
   coalitionLeaderId(): number | null {
     return this.coalitionLeader;
   }
@@ -248,6 +382,19 @@ export class GrandStrategyExecution implements Execution {
 
   /** A tile taken from another player starts out occupied. */
   onConquer(attacker: Player, defender: Player, tiles = 1): void {
+    if (
+      this.on("weariness") &&
+      attacker.type() !== PlayerType.Bot &&
+      defender.type() !== PlayerType.Bot
+    ) {
+      recordConquest(
+        this.peaceOf(attacker)!,
+        attacker.smallID(),
+        this.peaceOf(defender)!,
+        defender.smallID(),
+        tiles,
+      );
+    }
     if (!this.warLayer) return;
     const w = this.warOf(attacker);
     if (w !== null) addOccupied(w, tiles);
@@ -389,6 +536,13 @@ export class GrandStrategyExecution implements Execution {
         )) /
       1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
+    if (
+      as !== null &&
+      defender.type() !== PlayerType.Bot &&
+      this.on("weariness")
+    ) {
+      this.peaceOf(attacker)!.lossesThisSecond += Math.floor(aLoss);
+    }
     if (as !== null) {
       as.attackLossesThisSecond += Math.floor(aLoss);
       as.equipment = Math.max(
@@ -430,6 +584,7 @@ export class GrandStrategyExecution implements Execution {
     // Filled in after the per-player loop, then sent with each human update.
     const humanUpdates: GrandStrategyUpdate[] = [];
     const knownBy = this.on("research") ? this.techSpread(players) : () => 0;
+    if (this.on("weariness")) this.diplomacySecond(mg, players);
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
@@ -572,6 +727,7 @@ export class GrandStrategyExecution implements Execution {
               : null,
         atomicProjects: [],
         atomicPowers: [],
+        ...this.peaceUpdate(mg, p),
       });
     }
     if (humanUpdates.length > 0) {
@@ -583,13 +739,123 @@ export class GrandStrategyExecution implements Execution {
       }
     }
     // Dead players keep no state.
-    for (const id of [...this.states.keys(), ...this.wars.keys()]) {
+    for (const id of [
+      ...this.states.keys(),
+      ...this.wars.keys(),
+      ...this.peace.keys(),
+    ]) {
       const p = mg.playerBySmallID(id);
       if (!p.isPlayer() || !p.isAlive()) {
         this.states.delete(id);
         this.wars.delete(id);
+        this.peace.delete(id);
       }
     }
+  }
+
+  /**
+   * M7 stage A, once a second before the nation loop: war and truce timers,
+   * peak land, war weariness, capitulations, then AI peace offers and
+   * answers. Players in game order, so every client agrees.
+   */
+  private diplomacySecond(mg: Game, players: readonly Player[]): void {
+    const land = mg.numLandTiles();
+    const live = players.filter(
+      (p) => p.type() !== PlayerType.Bot && p.isAlive(),
+    );
+    for (const p of live) {
+      const s = this.stateOf(p)!;
+      const ps = this.peaceOf(p)!;
+      advancePeaceTimers(ps, p.numTilesOwned());
+      s.weariness = advanceWeariness(s.weariness ?? 0, {
+        attackLosses: ps.lossesThisSecond,
+        maxTroops: mg.config().maxTroops(p),
+        tilesLost: ps.tilesLostThisSecond,
+        peakTiles: ps.peakTiles,
+        tilesOwned: p.numTilesOwned(),
+        numLandTiles: land,
+        occupied: this.wars.get(p.smallID())?.occupied ?? 0,
+        longWars: longWars(ps),
+        atWar: ps.enemies.length > 0,
+      });
+      ps.lossesThisSecond = 0;
+      ps.tilesLostThisSecond = 0;
+    }
+    for (const p of live) {
+      const ps = this.peaceOf(p)!;
+      const t = capitulationTarget(ps, p.numTilesOwned(), land);
+      if (t === null) continue;
+      const winner = mg.playerBySmallID(t);
+      if (!winner.isPlayer() || !(winner as Player).isAlive()) {
+        ps.enemies = ps.enemies.filter((e) => e.target !== t);
+        continue;
+      }
+      // A second capitulation needs another large loss from here.
+      ps.peakTiles = p.numTilesOwned();
+      this.makePeace(p, winner as Player, "capitulation");
+    }
+    const coalition = this.warLayer ? this.coalitionLeader : null;
+    for (const p of live) {
+      if (p.type() !== PlayerType.Nation) continue;
+      const s = this.stateOf(p)!;
+      const ps = this.peaceOf(p)!;
+      const personality = aiPersonalityFor(p.smallID());
+      for (const o of live) {
+        if (o === p) continue;
+        const os = this.peace.get(o.smallID());
+        if (os === undefined || !hasOffered(os, p.smallID())) continue;
+        const e = enemyEntry(ps, o.smallID());
+        const accept =
+          o.smallID() === coalition
+            ? losingTo(e)
+            : aiAcceptsPeace(personality, s.weariness ?? 0, e);
+        if (accept) this.offerPeace(p, o);
+      }
+      const target = aiPeaceTarget(
+        ps,
+        personality,
+        s.weariness ?? 0,
+        coalition,
+      );
+      if (target === null) continue;
+      const t = mg.playerBySmallID(target);
+      if (t.isPlayer() && (t as Player).isAlive()) {
+        this.offerPeace(p, t as Player);
+      }
+    }
+  }
+
+  /** HUD view of a nation's wars, offers and truces. */
+  private peaceUpdate(mg: Game, p: Player) {
+    const ps = this.peace.get(p.smallID());
+    const idOf = (small: number) => {
+      const t = mg.playerBySmallID(small);
+      return t.isPlayer() ? (t as Player).id() : "";
+    };
+    const timed = (list: readonly TimedTarget[]) =>
+      list.map((t) => ({ target: idOf(t.target), seconds: t.seconds }));
+    const offersToMe: string[] = [];
+    // Small-id order: map order differs after a snapshot restore.
+    const ids = [...this.peace.keys()].sort((x, y) => x - y);
+    for (const id of ids) {
+      const os = this.peace.get(id)!;
+      if (id !== p.smallID() && hasOffered(os, p.smallID())) {
+        offersToMe.push(idOf(id));
+      }
+    }
+    return {
+      weariness: wearinessPermille(this.states.get(p.smallID())?.weariness),
+      wars: (ps?.enemies ?? []).map((e) => ({
+        target: idOf(e.target),
+        seconds: e.seconds,
+        won: e.won,
+        lost: e.lost,
+      })),
+      peaceOffers: timed(ps?.offers ?? []),
+      peaceOffersToMe: offersToMe,
+      truces: timed(ps?.truces ?? []),
+      peakTiles: ps?.peakTiles ?? 0,
+    };
   }
 
   /**
@@ -779,7 +1045,9 @@ export class GrandStrategyExecution implements Execution {
         artilleryShare: s.artilleryShare,
         researched: [...s.researched],
         research: s.research.map((r) => ({ ...r })),
+        weariness: s.weariness ?? 0,
         ...warSnapshot(this.wars.get(id)),
+        ...peaceSnapshot(this.peace.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
     });
@@ -815,6 +1083,20 @@ export class GrandStrategyExecution implements Execution {
           artilleryShare: n.artilleryShare,
           researched: [...n.researched],
           research: n.research.map((r) => ({ ...r })),
+          weariness: n.weariness,
+        },
+      ]),
+    );
+    this.peace = new Map(
+      s.states.map((n) => [
+        n.id,
+        {
+          peakTiles: n.peakTiles,
+          tilesLostThisSecond: n.tilesLostThisSecond,
+          lossesThisSecond: n.lossesThisSecond,
+          enemies: n.enemies.map((e) => ({ ...e })),
+          truces: n.truces.map((t) => ({ ...t })),
+          offers: n.offers.map((t) => ({ ...t })),
         },
       ]),
     );
@@ -857,7 +1139,19 @@ function warSnapshot(w: NationWarState | undefined) {
   };
 }
 
+function peaceSnapshot(p: NationPeaceState | undefined) {
+  return {
+    peakTiles: p?.peakTiles ?? 0,
+    tilesLostThisSecond: p?.tilesLostThisSecond ?? 0,
+    lossesThisSecond: p?.lossesThisSecond ?? 0,
+    enemies: (p?.enemies ?? []).map((e) => ({ ...e })),
+    truces: (p?.truces ?? []).map((t) => ({ ...t })),
+    offers: (p?.offers ?? []).map((t) => ({ ...t })),
+  };
+}
+
 const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
+const TimedTargetSchema = z.object({ target: zInt(), seconds: zInt() });
 const WarGoalSchema = z.object({
   target: zInt(),
   seconds: zInt(),
@@ -896,6 +1190,21 @@ const GrandStrategyStateSchema = z.object({
       occupied: zInt(),
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
+      weariness: zInt(),
+      peakTiles: zInt(),
+      tilesLostThisSecond: zInt(),
+      lossesThisSecond: zInt(),
+      enemies: z.array(
+        z.object({
+          target: zInt(),
+          seconds: zInt(),
+          idle: zInt(),
+          won: zInt(),
+          lost: zInt(),
+        }),
+      ),
+      truces: z.array(TimedTargetSchema),
+      offers: z.array(TimedTargetSchema),
     }),
   ),
   coalitionLeader: zInt().nullable(),
@@ -904,9 +1213,23 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 8,
+  version: 9,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v9 added war weariness, wars, truces and peace offers (M7 stage A).
+    8: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        weariness: 0,
+        peakTiles: 0,
+        tilesLostThisSecond: 0,
+        lossesThisSecond: 0,
+        enemies: [],
+        truces: [],
+        offers: [],
+      })),
+    }),
     // v8 added research.
     7: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

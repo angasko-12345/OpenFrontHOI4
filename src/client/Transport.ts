@@ -197,6 +197,11 @@ export class SendJustifyWarIntentEvent implements GameEvent {
   constructor(public readonly targetID: PlayerID) {}
 }
 
+/** Grand Strategy: offer peace to, or accept peace from, `targetID`. */
+export class SendPeaceIntentEvent implements GameEvent {
+  constructor(public readonly targetID: PlayerID) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -359,6 +364,9 @@ export class Transport {
     );
     this.subscribe(SendJustifyWarIntentEvent, (e) =>
       this.sendIntent({ type: "justify_war", targetID: e.targetID }),
+    );
+    this.subscribe(SendPeaceIntentEvent, (e) =>
+      this.sendIntent({ type: "peace", targetID: e.targetID }),
     );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),

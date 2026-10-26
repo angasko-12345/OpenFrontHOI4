@@ -193,7 +193,7 @@ export class NationAttackBehavior extends AiAttackBehavior {
       (o) => this.player?.isFriendly(o) === true,
     );
     const borderingEnemies = borderingPlayers.filter(
-      (o) => this.player?.isFriendly(o) === false,
+      (o) => this.player?.isFriendly(o) === false && !this.truceWith(o),
     );
 
     // Attack TerraNullius but not nuked territory (direct border or across a river)

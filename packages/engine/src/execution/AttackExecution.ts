@@ -300,7 +300,12 @@ export class AttackExecution implements Execution {
       return;
     }
 
-    if (targetPlayer && this._owner.isFriendly(targetPlayer)) {
+    if (
+      targetPlayer &&
+      (this._owner.isFriendly(targetPlayer) ||
+        // Grand Strategy: a truce was signed after the attack started.
+        this.mg.config().isAttackLocked(this._owner, targetPlayer))
+    ) {
       // In this case a new alliance was created AFTER the attack started.
       this.retreat();
       return;

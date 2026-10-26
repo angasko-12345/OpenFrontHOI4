@@ -271,7 +271,12 @@ export class TransportShipExecution implements Execution {
           return;
         }
         this.attacker.conquer(this.dst);
-        if (this.target.isPlayer() && this.attacker.isFriendly(this.target)) {
+        if (
+          this.target.isPlayer() &&
+          (this.attacker.isFriendly(this.target) ||
+            // Grand Strategy truce signed while the boat was at sea.
+            this.mg.config().isAttackLocked(this.attacker, this.target))
+        ) {
           this.attacker.addTroops(this.boat.troops());
         } else {
           this.mg.addExecution(

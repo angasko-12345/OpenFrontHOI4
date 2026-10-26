@@ -367,6 +367,21 @@ export class Config {
     return this.unitLock !== null && this.unitLock(player, type);
   }
 
+  private attackLock: ((a: PlayerLike, b: PlayerLike) => boolean) | null = null;
+
+  /**
+   * Install a pair-wise attack lock (Grand Strategy truces). It must be a
+   * pure function of game state. Classic games never install one.
+   */
+  setAttackLock(fn: ((a: PlayerLike, b: PlayerLike) => boolean) | null): void {
+    this.attackLock = fn;
+  }
+
+  /** Whether `attacker` may not attack `target` right now (truce). */
+  isAttackLocked(attacker: PlayerLike, target: PlayerLike): boolean {
+    return this.attackLock !== null && this.attackLock(attacker, target);
+  }
+
   private applyTroopCapModifier(player: PlayerLike, cap: number): number {
     if (this.troopCapModifier === null) return cap;
     const m = this.troopCapModifier(player);

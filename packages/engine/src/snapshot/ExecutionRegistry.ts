@@ -27,6 +27,7 @@ import { NationExecutionSnapshot } from "../execution/NationExecution";
 import { NoOpExecutionSnapshot } from "../execution/NoOpExecution";
 import { NukeExecutionSnapshot } from "../execution/NukeExecution";
 import { PauseExecutionSnapshot } from "../execution/PauseExecution";
+import { PeaceExecutionSnapshot } from "../execution/PeaceExecution";
 import { PlayerExecutionSnapshot } from "../execution/PlayerExecution";
 import { PortExecutionSnapshot } from "../execution/PortExecution";
 import { QuickChatExecutionSnapshot } from "../execution/QuickChatExecution";
@@ -94,6 +95,7 @@ export const EXECUTION_SNAPSHOT_TYPES = [
   SetLawExecutionSnapshot,
   GsActionExecutionSnapshot,
   JustifyWarExecutionSnapshot,
+  PeaceExecutionSnapshot,
   SAMMissileExecutionSnapshot,
   ShellExecutionSnapshot,
   SpawnExecutionSnapshot,
