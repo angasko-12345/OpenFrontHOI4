@@ -27,6 +27,7 @@ import {
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  ATOMIC_PROJECT_ERA,
   canResearch,
   ERA_ADVANCE,
   MAX_ERA,
@@ -398,6 +399,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               </button>`,
           )}
         </div>
+        ${this.renderAtomicWorld(d)}
         <div class="mt-1">
           ${
             current
@@ -610,7 +612,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="float-right">${slotPct(r.progress, r.cost)}</span>
         </div>`;
       })}
-      ${TECHS.filter((t) => t.era <= d.era).map((t) => {
+      ${TECHS.filter((t) => t.era <= d.era || t.project === true).map((t) => {
         const check = canResearch(state, t.id);
         const done = check === "researched";
         if (check === "in_progress") return nothing;
@@ -632,14 +634,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           </div>
           <div class="opacity-80">${t.description}</div>
           ${
-            check === "exclusive"
-              ? html`<div class="opacity-60">Another doctrine chosen</div>`
-              : check === "missing_prerequisite"
-                ? html`<div class="opacity-60">
-                    Needs:
-                    ${t.requires.map((r) => techById(r)?.name).join(", ")}
-                  </div>`
-                : nothing
+            check === "era"
+              ? html`<div class="opacity-60">Unlocks in era ${t.era}</div>`
+              : check === "exclusive"
+                ? html`<div class="opacity-60">Another doctrine chosen</div>`
+                : check === "missing_prerequisite"
+                  ? html`<div class="opacity-60">
+                      Needs:
+                      ${t.requires.map((r) => techById(r)?.name).join(", ")}
+                    </div>`
+                  : nothing
           }
         </button>`;
       })}
@@ -649,6 +653,44 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               Research ${ERA_ADVANCE} era ${d.era} technologies to reach era
               ${d.era + 1}. Technologies most nations know cost 30% less.
             </div>`
+          : nothing
+      }
+      <div class="opacity-60">
+        Atom bombs, hydrogen bombs and MIRVs need the atomic project (era
+        ${ATOMIC_PROJECT_ERA}, no catch-up discount). Every nation is told when
+        one starts or finishes.
+      </div>
+    </div>`;
+  }
+
+  /** World list: who is building the bomb, and who already has it. */
+  private renderAtomicWorld(d: GrandStrategyUpdate) {
+    const projects = d.atomicProjects ?? [];
+    const powers = d.atomicPowers ?? [];
+    if (projects.length === 0 && powers.length === 0) return nothing;
+    const MAX = 5;
+    const rows = [
+      ...projects.map((p) => ({ id: p.player, label: `${p.seconds}s` })),
+      ...powers.map((id) => ({ id, label: "Nuclear" })),
+    ];
+    const myId = this.game.myPlayer()?.id();
+    return html`<div
+      class="mt-1 rounded bg-red-900/40 px-2 py-1"
+      data-testid="gs-atomic-world"
+    >
+      <div class="font-semibold">Atomic projects</div>
+      ${rows.slice(0, MAX).map(
+        (r) =>
+          html`<div class="flex justify-between gap-2">
+            <span class="truncate ${r.id === myId ? "text-yellow-300" : ""}"
+              >${this.name(r.id)}</span
+            >
+            <span class="shrink-0">${r.label}</span>
+          </div>`,
+      )}
+      ${
+        rows.length > MAX
+          ? html`<div class="opacity-60">+${rows.length - MAX} more</div>`
           : nothing
       }
     </div>`;
