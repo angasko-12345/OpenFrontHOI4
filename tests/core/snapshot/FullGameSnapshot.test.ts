@@ -124,7 +124,13 @@ const VARIANTS: [string, Partial<GameConfig>][] = [
   // Water nukes rewrite terrain and the water graph mid-game.
   ["water nukes", { waterNukes: true }],
   ["teams", { gameMode: GameMode.Team, playerTeams: 2 }],
+  // Grand Strategy off. Under Grand Strategy nobody finishes the atomic
+  // project this early, so nukes, MIRVs and SAM missiles only fly here.
+  ["classic", { grandStrategy: false }],
 ];
+
+/** Execution types seen across every variant, checked after the last one. */
+const seenExecTypes = new Set<string>();
 
 describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
   const start = scriptedGameStart(overrides);
@@ -132,6 +138,7 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
 
   beforeAll(async () => {
     reference = await playReference(start);
+    for (const t of reference.execTypes) seenExecTypes.add(t);
   }, TEST_TIMEOUT);
   test(
     "snapshot -> restore -> snapshot is byte-identical at every checkpoint",
@@ -193,18 +200,15 @@ describe.each(VARIANTS)("full game snapshots: %s", (_, overrides) => {
   test(
     "the game exercised every execution type",
     () => {
-      if (Object.keys(overrides).length > 0) return; // checked once, on FFA
+      // Checked once, after the last variant: Grand Strategy executions only
+      // exist with it on, nuclear ones (M6 stage C) only in classic.
+      if (_ !== VARIANTS[VARIANTS.length - 1][0]) return;
       // Runs during the spawn phase and finishes inside init, so it is never
       // alive at a tick boundary. BasicExecutions.test.ts covers it directly.
       // SetFocus and SetLaw (Grand Strategy) finish inside init the same way.
-      const neverStored = new Set([
-        "Pause",
-        "SetFocus",
-        "SetLaw",
-        "GsAction",
-      ]);
+      const neverStored = new Set(["Pause", "SetFocus", "SetLaw", "GsAction"]);
       const missing = EXECUTION_SNAPSHOT_TYPES.map((t) => t.name).filter(
-        (name) => !reference.execTypes.has(name) && !neverStored.has(name),
+        (name) => !seenExecTypes.has(name) && !neverStored.has(name),
       );
       expect(missing).toEqual([]);
     },

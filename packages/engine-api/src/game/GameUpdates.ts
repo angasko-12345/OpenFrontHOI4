@@ -201,6 +201,10 @@ export interface GrandStrategyUpdate {
   justifiedAgainstMe: string[];
   /** The nation the coalition is against, if any. */
   coalitionLeader: string | null;
+  /** M6 stage C, the same for every player: atomic projects running, with
+   * seconds left, and nations that finished one (may build nukes). */
+  atomicProjects: { player: string; seconds: number }[];
+  atomicPowers: string[];
 }
 
 export interface BonusEventUpdate {

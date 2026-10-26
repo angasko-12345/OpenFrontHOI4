@@ -182,6 +182,13 @@ export class NationNukeBehavior {
     ) {
       return;
     }
+    // Grand Strategy: nothing to launch before the atomic project.
+    if (
+      config.isUnitLockedFor(this.player, UnitType.AtomBomb) &&
+      config.isUnitLockedFor(this.player, UnitType.HydrogenBomb)
+    ) {
+      return;
+    }
 
     const choice = this.chooseNukeTarget();
     if (choice === null) {

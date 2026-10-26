@@ -348,6 +348,25 @@ export class Config {
     this.troopCapModifier = fn;
   }
 
+  private unitLock: ((player: PlayerLike, type: UnitType) => boolean) | null =
+    null;
+
+  /**
+   * Install a per-player unit lock (Grand Strategy: nuclear weapons before
+   * the atomic project). It must be a pure function of game state. Classic
+   * games never install one, so nothing is locked there.
+   */
+  setUnitLock(
+    fn: ((player: PlayerLike, type: UnitType) => boolean) | null,
+  ): void {
+    this.unitLock = fn;
+  }
+
+  /** Whether `player` may not build `type` yet (beyond isUnitDisabled). */
+  isUnitLockedFor(player: PlayerLike, type: UnitType): boolean {
+    return this.unitLock !== null && this.unitLock(player, type);
+  }
+
   private applyTroopCapModifier(player: PlayerLike, cap: number): number {
     if (this.troopCapModifier === null) return cap;
     const m = this.troopCapModifier(player);

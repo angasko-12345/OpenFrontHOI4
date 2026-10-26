@@ -115,6 +115,8 @@ export function mirvGetsThrough(
 
 /** Whether a MIRV would get through at the land or city leader, the players nations MIRV. */
 export function isMirvWorthSavingFor(game: Game, player: Player): boolean {
+  // Grand Strategy: no saving for a MIRV the atomic project has not unlocked.
+  if (game.config().isUnitLockedFor(player, UnitType.MIRV)) return false;
   let landLeader: Player | null = null;
   let cityLeader: Player | null = null;
   for (const p of validMirvTargets(game, player)) {
@@ -251,7 +253,10 @@ export class NationMIRVBehavior {
 
   considerMIRV(): boolean {
     if (this.player === null) throw new Error("not initialized");
-    if (this.game.config().isUnitDisabled(UnitType.MIRV)) {
+    if (
+      this.game.config().isUnitDisabled(UnitType.MIRV) ||
+      this.game.config().isUnitLockedFor(this.player, UnitType.MIRV)
+    ) {
       return false;
     }
     if (this.player.units(UnitType.MissileSilo).length === 0) {

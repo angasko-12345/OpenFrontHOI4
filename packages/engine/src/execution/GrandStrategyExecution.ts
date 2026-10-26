@@ -1,10 +1,14 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import {
   GsActionID,
+  MessageType,
   PlayerType,
   UnitType,
 } from "@openfront/engine-api/game/GameTypes";
-import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
+import {
+  GameUpdateType,
+  GrandStrategyUpdate,
+} from "@openfront/engine-api/game/GameUpdates";
 import {
   ActionCheck,
   advanceSecond,
@@ -48,8 +52,11 @@ import {
 import {
   advanceResearch,
   aiResearch,
+  ATOMIC_PROJECT,
   eraOf,
+  hasAtomicProject,
   RESEARCH_SLOTS,
+  secondsLeft,
   techById,
   techCost,
 } from "@openfront/engine-lib/game/GrandStrategyResearch";
@@ -121,11 +128,15 @@ export class GrandStrategyExecution implements Execution {
   /**
    * M5 stage B ablation switches for the balance harness, like warLayer:
    * absent = on, never saved. "civgold" = gold from free civilian
-   * factories, "trade" = automatic imports, "artillery" = production lines.
+   * factories, "trade" = automatic imports, "artillery" = production lines,
+   * "research" = M6 research, "atomic" = the M6 stage C nuclear gate
+   * (nukes buildable without the atomic project; AI skips the project).
    */
   private ablated?: Set<string>;
 
-  ablate(part: "civgold" | "trade" | "artillery" | "research"): void {
+  ablate(
+    part: "civgold" | "trade" | "artillery" | "research" | "atomic",
+  ): void {
     (this.ablated ??= new Set()).add(part);
   }
 
@@ -159,6 +170,24 @@ export class GrandStrategyExecution implements Execution {
             p.numTilesOwned(),
           );
     });
+    // M6 stage C: nuclear weapons wait for the atomic project.
+    mg.config().setUnitLock((p, type) => this.nukeLocked(p, type));
+  }
+
+  /**
+   * Whether `p` may not build `type` yet: atom bombs, hydrogen bombs and
+   * MIRVs before the atomic project. Silos, SAMs and warheads are free.
+   * Bots (tribes) never build nukes, so they are left alone. Read-only.
+   */
+  private nukeLocked(
+    p: { type(): PlayerType; smallID(): number },
+    type: UnitType,
+  ): boolean {
+    if (!GATED_NUKES.has(type)) return false;
+    if (!this.on("atomic") || !this.on("research")) return false;
+    if (p.type() === PlayerType.Bot) return false;
+    const s = this.states.get(p.smallID());
+    return s === undefined || !hasAtomicProject(s.researched);
   }
 
   /** State for a participating player, created on first use. */
@@ -268,7 +297,24 @@ export class GrandStrategyExecution implements Execution {
   takeAction(player: Player, id: GsActionID): ActionCheck {
     const s = this.stateOf(player);
     if (s === null) return "unknown";
-    return takeAction(s, id);
+    const check = takeAction(s, id);
+    if (check === "ok" && id === ATOMIC_PROJECT) {
+      this.announceAtomic(player, "events_display.atomic_project_started");
+    }
+    return check;
+  }
+
+  /** Tell every player a nation started or finished its atomic project. */
+  private announceAtomic(player: Player, key: string): void {
+    this.mg?.displayMessage(
+      key,
+      MessageType.ATOMIC_PROJECT,
+      null,
+      undefined,
+      { name: player.displayName() },
+      undefined,
+      player.id(),
+    );
   }
 
   /** Scale troop growth by manpower focuses, never past the troop cap. */
@@ -381,6 +427,8 @@ export class GrandStrategyExecution implements Execution {
           mg.numLandTiles(),
         );
     const held = this.countDeposits(mg);
+    // Filled in after the per-player loop, then sent with each human update.
+    const humanUpdates: GrandStrategyUpdate[] = [];
     const knownBy = this.on("research") ? this.techSpread(players) : () => 0;
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
@@ -395,13 +443,24 @@ export class GrandStrategyExecution implements Execution {
         if (this.on("research")) {
           // Fill free slots; bounded so a rule bug can never spin forever.
           for (let i = 0; i < RESEARCH_SLOTS; i++) {
-            const next = aiResearch(s, aiPersonalityFor(p.smallID()));
-            if (next === null || takeAction(s, next) !== "ok") break;
+            const next = aiResearch(
+              s,
+              aiPersonalityFor(p.smallID()),
+              !this.on("atomic"),
+            );
+            if (
+              next === null ||
+              this.takeAction(p, next as GsActionID) !== "ok"
+            )
+              break;
           }
         }
       }
       if (this.on("research")) {
-        advanceResearch(s, knownBy);
+        const done = advanceResearch(s, knownBy);
+        if (done.includes(ATOMIC_PROJECT)) {
+          this.announceAtomic(p, "events_display.atomic_project_completed");
+        }
       } else {
         s.research = [];
         s.researched = [];
@@ -457,7 +516,7 @@ export class GrandStrategyExecution implements Execution {
       });
       // Only humans have a HUD to feed; nations would only bloat replays.
       if (p.type() !== PlayerType.Human) continue;
-      mg.addUpdate({
+      humanUpdates.push({
         type: GameUpdateType.GrandStrategy,
         player: p.id(),
         equipment: s.equipment,
@@ -511,7 +570,17 @@ export class GrandStrategyExecution implements Execution {
             : mg.playerBySmallID(this.coalitionLeader).isPlayer()
               ? (mg.playerBySmallID(this.coalitionLeader) as Player).id()
               : null,
+        atomicProjects: [],
+        atomicPowers: [],
       });
+    }
+    if (humanUpdates.length > 0) {
+      const world = this.atomicWorld(players);
+      for (const u of humanUpdates) {
+        u.atomicProjects = world.projects;
+        u.atomicPowers = world.powers;
+        mg.addUpdate(u);
+      }
     }
     // Dead players keep no state.
     for (const id of [...this.states.keys(), ...this.wars.keys()]) {
@@ -521,6 +590,38 @@ export class GrandStrategyExecution implements Execution {
         this.wars.delete(id);
       }
     }
+  }
+
+  /**
+   * M6 stage C, world-visible: nations running the atomic project (seconds
+   * left) and those that finished it, in small-id order.
+   */
+  private atomicWorld(players: readonly Player[]): {
+    projects: { player: string; seconds: number }[];
+    powers: string[];
+  } {
+    const projects: { player: string; seconds: number }[] = [];
+    const powers: string[] = [];
+    const def = techById(ATOMIC_PROJECT);
+    if (def === undefined || !this.on("research")) return { projects, powers };
+    const sorted = [...players].sort((x, y) => x.smallID() - y.smallID());
+    for (const p of sorted) {
+      if (p.type() === PlayerType.Bot || !p.isAlive()) continue;
+      const s = this.states.get(p.smallID());
+      if (s === undefined) continue;
+      if (hasAtomicProject(s.researched)) {
+        powers.push(p.id());
+        continue;
+      }
+      const slot = s.research.find((r) => r.id === ATOMIC_PROJECT);
+      if (slot !== undefined) {
+        projects.push({
+          player: p.id(),
+          seconds: secondsLeft(slot.progress, techCost(def, 0)),
+        });
+      }
+    }
+    return { projects, powers };
   }
 
   /**
@@ -731,6 +832,12 @@ export class GrandStrategyExecution implements Execution {
     if (s.initialized) this.attach(r.game);
   }
 }
+
+const GATED_NUKES: ReadonlySet<UnitType> = new Set([
+  UnitType.AtomBomb,
+  UnitType.HydrogenBomb,
+  UnitType.MIRV,
+]);
 
 const SUPPLY_HUBS: readonly UnitType[] = [
   UnitType.City,

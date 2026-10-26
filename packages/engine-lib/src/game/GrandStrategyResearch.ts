@@ -11,6 +11,11 @@
  * era once it has researched ERA_ADVANCE technologies of its current era;
  * technologies of a later era stay locked until then. Doctrine roots are
  * mutually exclusive.
+ *
+ * M6 stage C: the atomic project is a world project. It takes a research
+ * slot like a technology but gets no catch-up discount and does not count
+ * toward the next era. Under Grand Strategy, nuclear weapons cannot be built
+ * until it is finished (see GrandStrategyExecution).
  */
 import type { TechID } from "@openfront/engine-api/game/GameTypes";
 import type { AiPersonality, GsModifiers } from "./GrandStrategy";
@@ -29,6 +34,8 @@ export interface TechDef {
   /** Cannot be researched once any of these is researched or in progress. */
   exclusive: readonly TechID[];
   effects: Partial<GsModifiers>;
+  /** A world project: no catch-up discount, not counted toward eras. */
+  project?: boolean;
 }
 
 export const RESEARCH_SLOTS = 2;
@@ -41,6 +48,12 @@ export const RESEARCH_PER_SECOND = 1000;
 export const CATCH_UP_DISCOUNT = 300;
 /** Share of other nations (per-mille) that must know it for the discount. */
 export const CATCH_UP_SHARE = 500;
+
+export const ATOMIC_PROJECT: TechID = "atomic_project";
+/** Seconds of one slot the atomic project takes. */
+export const ATOMIC_PROJECT_SECONDS = 240;
+/** Era the atomic project unlocks in. */
+export const ATOMIC_PROJECT_ERA = 2;
 
 const DOCTRINES: readonly TechID[] = [
   "maneuver_doctrine",
@@ -250,6 +263,20 @@ export const TECHS: readonly TechDef[] = [
     exclusive: [],
     effects: { defense: 60, manpower: 50 },
   },
+  // World project
+  {
+    id: ATOMIC_PROJECT,
+    name: "Atomic Project",
+    description:
+      "Unlocks atom bombs, hydrogen bombs and MIRVs. Announced to the world.",
+    branch: "industry",
+    era: ATOMIC_PROJECT_ERA,
+    seconds: ATOMIC_PROJECT_SECONDS,
+    requires: [],
+    exclusive: [],
+    effects: {},
+    project: true,
+  },
 ];
 
 const TECH_BY_ID = new Map<string, TechDef>(TECHS.map((t) => [t.id, t]));
@@ -277,7 +304,8 @@ export function eraOf(researched: readonly string[]): number {
   while (era < MAX_ERA) {
     let n = 0;
     for (const id of researched) {
-      if (TECH_BY_ID.get(id)?.era === era) n++;
+      const t = TECH_BY_ID.get(id);
+      if (t !== undefined && t.era === era && t.project !== true) n++;
     }
     if (n < ERA_ADVANCE) break;
     era++;
@@ -288,7 +316,7 @@ export function eraOf(researched: readonly string[]): number {
 /** Progress a technology needs, after the catch-up discount. */
 export function techCost(def: TechDef, knownByPermille: number): number {
   const base = def.seconds * RESEARCH_PER_SECOND;
-  if (knownByPermille < CATCH_UP_SHARE) return base;
+  if (def.project === true || knownByPermille < CATCH_UP_SHARE) return base;
   return base - Math.floor((base * CATCH_UP_DISCOUNT) / 1000);
 }
 
@@ -377,6 +405,7 @@ const AI_RESEARCH_ORDER: Record<AiPersonality, readonly TechID[]> = {
     "improved_workshops",
     "improved_artillery",
     "assembly_lines",
+    "atomic_project",
     "concentrated_fire",
     "field_fortifications",
     "motorization",
@@ -391,6 +420,7 @@ const AI_RESEARCH_ORDER: Record<AiPersonality, readonly TechID[]> = {
     "maneuver_doctrine",
     "basic_machine_tools",
     "propaganda_bureau",
+    "atomic_project",
     "improved_artillery",
     "rapid_exploitation",
     "motorization",
@@ -408,6 +438,7 @@ const AI_RESEARCH_ORDER: Record<AiPersonality, readonly TechID[]> = {
     "basic_machine_tools",
     "improved_workshops",
     "entrenchment",
+    "atomic_project",
     "motorization",
     "assembly_lines",
     "infantry_weapons",
@@ -420,17 +451,34 @@ const AI_RESEARCH_ORDER: Record<AiPersonality, readonly TechID[]> = {
   ],
 };
 
-/** Next technology an AI nation starts, or null when none fits. */
+/**
+ * Next technology an AI nation starts, or null when none fits. With
+ * `skipProjects` (the balance harness ablation), world projects are ignored.
+ */
 export function aiResearch(
   s: ResearchState,
   personality: AiPersonality,
+  skipProjects = false,
 ): string | null {
   if (s.research.length >= RESEARCH_SLOTS) return null;
+  const fits = (id: string) =>
+    canResearch(s, id) === "ok" &&
+    !(skipProjects && TECH_BY_ID.get(id)?.project === true);
   for (const id of AI_RESEARCH_ORDER[personality]) {
-    if (canResearch(s, id) === "ok") return id;
+    if (fits(id)) return id;
   }
   for (const t of TECHS) {
-    if (canResearch(s, t.id) === "ok") return t.id;
+    if (fits(t.id)) return t.id;
   }
   return null;
+}
+
+/** Whether a nation has finished the atomic project. */
+export function hasAtomicProject(researched: readonly string[]): boolean {
+  return researched.includes(ATOMIC_PROJECT);
+}
+
+/** Whole seconds a research slot still needs (rounded up). */
+export function secondsLeft(progress: number, cost: number): number {
+  return Math.max(0, Math.ceil((cost - progress) / RESEARCH_PER_SECOND));
 }

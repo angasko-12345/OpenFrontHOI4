@@ -888,6 +888,8 @@
     "alliance_request_status": "{name} {status} your alliance request",
     "atom_bomb_detonated": "{name} - atom bomb detonated",
     "atom_bomb_inbound": "{name} - atom bomb inbound",
+    "atomic_project_completed": "{name} has completed an atomic project and can now build nuclear weapons",
+    "atomic_project_started": "{name} has started an atomic project",
     "attack_cancelled_retreat": "Attack cancelled, {troops} soldiers killed during retreat",
     "attack_request": "{name} requests you attack {target}",
     "betrayal_debuff_ends": "{time} seconds left until betrayal debuff ends",

@@ -268,6 +268,8 @@ export const TECH_IDS = [
   "automation",
   "mechanized_warfare",
   "total_defense",
+  // M6 stage C: the atomic project (a world project, see GrandStrategyResearch).
+  "atomic_project",
 ] as const;
 export type TechID = (typeof TECH_IDS)[number];
 
@@ -566,6 +568,8 @@ export enum MessageType {
   DONATION_RECEIVED,
   CHAT,
   RENEW_ALLIANCE,
+  // Grand Strategy: a nation started or finished its atomic project.
+  ATOMIC_PROJECT,
 }
 
 // Message categories used for filtering events in the EventsDisplay
@@ -598,6 +602,7 @@ export const MESSAGE_TYPE_CATEGORIES: Record<MessageType, MessageCategory> = {
   [MessageType.ALLIANCE_BROKEN]: MessageCategory.ALLIANCE,
   [MessageType.ALLIANCE_EXPIRED]: MessageCategory.ALLIANCE,
   [MessageType.RENEW_ALLIANCE]: MessageCategory.ALLIANCE,
+  [MessageType.ATOMIC_PROJECT]: MessageCategory.NUKE,
   [MessageType.DONATION_SENT]: MessageCategory.TRADE,
   [MessageType.DONATION_RECEIVED]: MessageCategory.TRADE,
   [MessageType.CHAT]: MessageCategory.CHAT,
