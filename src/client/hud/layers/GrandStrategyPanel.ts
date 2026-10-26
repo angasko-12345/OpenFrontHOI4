@@ -82,6 +82,9 @@ const WIDE_PX = 1280;
 const isWide = () =>
   typeof window !== "undefined" && window.innerWidth >= WIDE_PX;
 
+/** Below upstream's 40px top sidebars. */
+const BAR_TOP_PX = 44;
+
 const pct = (permille: number) => `${Math.floor(permille / 10)}%`;
 
 /**
@@ -109,6 +112,9 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   /** Px the bottom sheet keeps clear for the upstream control panel. */
   @state() private bottomInset = 0;
   @state() private wide = isWide();
+  /** Top of the phone/tablet bar: under the upstream sidebars, or under
+   * the upstream player info overlay while that is showing. */
+  @state() private topOffset = BAR_TOP_PX;
   /** War weariness went up in the latest update. */
   @state() private wearinessRising = false;
   private nextAlertId = 1;
@@ -232,7 +238,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   private measure(force: boolean) {
     if (typeof window === "undefined") return;
     const now = Date.now();
-    if (!force && now - this.lastMeasure < 500) return;
+    if (!force && now - this.lastMeasure < 250) return;
     this.lastMeasure = now;
     const wide = isWide();
     if (wide !== this.wide) this.wide = wide;
@@ -246,6 +252,15 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           )
         : 0;
     if (inset !== this.bottomInset) this.bottomInset = inset;
+    // Upstream's player info overlay is fixed at the top centre (z 1001)
+    // and would cover the bar: step below it while it shows.
+    let top = BAR_TOP_PX;
+    const info = document.querySelector("player-info-overlay .fixed > div");
+    if (info && !info.classList.contains("invisible")) {
+      const ir = info.getBoundingClientRect();
+      if (ir.height > 0 && ir.bottom + 4 > top) top = Math.round(ir.bottom + 4);
+    }
+    if (top !== this.topOffset) this.topOffset = top;
   }
 
   private handleKey(e: KeyboardEvent) {
@@ -422,6 +437,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         value: renderTroops(d.equipment),
         tone: d.equipped >= 900 ? "normal" : d.equipped >= 500 ? "warn" : "bad",
         mark: pct(d.equipped),
+        markWide: true,
         detail: [
           `Equips ${pct(d.equipped)} of the army`,
           `${d.factories} military factories at ${pct(d.efficiency)} efficiency`,
@@ -598,6 +614,33 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     }
     const tab = this.tab;
     const t = tab === null ? null : this.tabTitle(tab, d);
+    const bar = renderGsResourceBar(
+      this.resources(d),
+      { openDetail: this.detail, dockOpen: tab !== null, attention },
+      {
+        detail: (k) => (this.detail = k),
+        toggleDock: () => this.toggleDock(),
+      },
+      this.wide ? { mode: "inline" } : { mode: "top", topPx: this.topOffset },
+    );
+    const dock =
+      tab !== null && t !== null
+        ? renderGsDock(
+            {
+              tab,
+              meta,
+              wide: this.wide,
+              bottomInset: this.bottomInset,
+              title: t.title,
+              subtitle: t.subtitle,
+              onTab: (x) => this.openTab(x),
+              onClose: () => {
+                this.tab = null;
+              },
+            },
+            this.renderTab(tab, d, state),
+          )
+        : nothing;
     return html`
       <style>
         @media (max-width: 639px) {
@@ -606,48 +649,36 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           }
         }
       </style>
-      ${renderGsResourceBar(
-        this.resources(d),
-        { openDetail: this.detail, dockOpen: tab !== null, attention },
-        {
-          detail: (k) => (this.detail = k),
-          toggleDock: () => this.toggleDock(),
-        },
-      )}
       ${
-        tab !== null && t !== null
-          ? renderGsDock(
-              {
-                tab,
-                meta,
-                wide: this.wide,
-                bottomInset: this.bottomInset,
-                title: t.title,
-                subtitle: t.subtitle,
-                onTab: (x) => this.openTab(x),
-                onClose: () => {
-                  this.tab = null;
-                },
-              },
-              this.renderTab(tab, d, state),
-            )
-          : nothing
+        this.wide
+          ? html`<div
+              class="pointer-events-none fixed bottom-2 left-2 z-[890] flex w-[380px] flex-col gap-1"
+              data-testid="gs-wide-column"
+            >
+              ${dock} ${bar}
+            </div>`
+          : html`${bar} ${dock}`
       }
-      ${renderGsAlerts(this.alerts, {
-        open: (a) => {
-          this.tab = a.tab;
-          this.lastTab = a.tab;
-          this.alerts = this.alerts.filter((x) => x.id !== a.id);
+      ${renderGsAlerts(
+        this.alerts,
+        {
+          open: (a) => {
+            this.tab = a.tab;
+            this.lastTab = a.tab;
+            this.alerts = this.alerts.filter((x) => x.id !== a.id);
+          },
+          dismiss: (a) => {
+            this.alerts = this.alerts.filter((x) => x.id !== a.id);
+          },
+          accept: (a) => {
+            if (a.target !== undefined) this.peace(a.target);
+            this.alerts = this.alerts.filter((x) => x.id !== a.id);
+          },
+          offerOpen: (target) => (d.peaceOffersToMe ?? []).includes(target),
         },
-        dismiss: (a) => {
-          this.alerts = this.alerts.filter((x) => x.id !== a.id);
-        },
-        accept: (a) => {
-          if (a.target !== undefined) this.peace(a.target);
-          this.alerts = this.alerts.filter((x) => x.id !== a.id);
-        },
-        offerOpen: (target) => (d.peaceOffersToMe ?? []).includes(target),
-      })}
+        // Under the bar: 2 rows of 40px on phones, one 32px row from sm.
+        this.wide ? 48 : this.topOffset + (window.innerWidth < 640 ? 88 : 44),
+      )}
     `;
   }
 

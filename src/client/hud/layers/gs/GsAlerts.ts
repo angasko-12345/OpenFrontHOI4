@@ -259,11 +259,12 @@ export interface GsAlertHandlers {
 export function renderGsAlerts(
   alerts: readonly GsAlert[],
   h: GsAlertHandlers,
+  topPx: number,
 ): TemplateResult | typeof nothing {
   if (alerts.length === 0) return nothing;
   return html`<div
-    class="pointer-events-none fixed right-1 z-[890] flex w-[min(272px,72vw)] flex-col gap-1
-      top-[132px] sm:top-[92px] sm:right-2"
+    class="pointer-events-none fixed right-1 z-[890] flex w-[min(272px,72vw)] flex-col gap-1 sm:right-2"
+    style="top:${topPx}px"
     data-testid="gs-alerts"
     aria-live="polite"
   >

@@ -72,23 +72,27 @@ export interface GsDockOptions {
 
 /**
  * The command card: tab content above a strip of icon tabs. Phones get a
- * full-width bottom sheet capped at 42% of the height, so the map centre
- * stays visible; wide screens a 380px dock at the bottom-left corner,
- * which upstream leaves empty from 1280px up.
+ * full-width bottom sheet kept in the lower half of the screen, so the map
+ * centre stays visible; wide screens a 380px dock in the bottom-left corner
+ * (upstream leaves it empty from 1280px up), placed by the caller.
  */
 export function renderGsDock(
   o: GsDockOptions,
   content: TemplateResult | typeof nothing,
 ): TemplateResult {
+  // Wide: laid out by the caller in its bottom-left column (above the bar).
   const pos = o.wide
-    ? "left-2 bottom-2 w-[380px]"
-    : "inset-x-0 sm:inset-x-auto sm:left-2 sm:w-[440px] sm:rounded-t-lg rounded-t-lg";
+    ? "relative w-full rounded-lg"
+    : "fixed inset-x-0 sm:inset-x-auto sm:left-2 sm:w-[440px] sm:rounded-t-lg rounded-t-lg";
   const style = o.wide ? "" : `bottom:${Math.max(0, o.bottomInset)}px`;
-  const maxH = o.wide ? "max-h-[min(62vh,560px)]" : "max-h-[42vh]";
+  const maxH = o.wide ? "max-h-[min(560px,calc(100vh-470px))]" : "";
+  // Phones: the whole sheet (header 40px + tabs 48px + content) stays in
+  // the lower half, above the control panel, so the map centre is clear.
+  const contentStyle = o.wide
+    ? ""
+    : `max-height:${Math.max(150, Math.floor(window.innerHeight / 2 - Math.max(0, o.bottomInset) - 96))}px`;
   return html`<div
-    class="pointer-events-auto fixed z-[890] flex flex-col overflow-hidden bg-gray-900/95 text-white shadow-2xl backdrop-blur-sm ${pos} ${
-      o.wide ? "rounded-lg" : ""
-    }"
+    class="pointer-events-auto z-[890] flex flex-col overflow-hidden bg-gray-900/95 text-white shadow-2xl backdrop-blur-sm ${pos}"
     style=${style}
     data-testid="gs-dock"
     data-tab=${o.tab}
@@ -109,6 +113,7 @@ export function renderGsDock(
     </div>
     <div
       class="gs-dock-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 text-sm sm:text-xs ${maxH}"
+      style=${contentStyle}
     >
       ${content}
     </div>
@@ -133,13 +138,16 @@ export function renderGsDock(
           @click=${() => o.onTab(t.id)}
         >
           ${gsIcon(t.icon, 18)}
-          <span class="max-w-full truncate px-0.5"
-            >${t.label}${
-              o.wide
-                ? html`<span class="ml-0.5 opacity-50">${t.key}</span>`
-                : nothing
-            }</span
-          >
+          <span class="max-w-full truncate px-0.5">${t.label}</span>
+          ${
+            o.wide
+              ? html`<span
+                  class="absolute left-1 top-0.5 text-[9px] opacity-50"
+                  aria-hidden="true"
+                  >${t.key}</span
+                >`
+              : nothing
+          }
           ${
             m.badge !== "none"
               ? html`<span
