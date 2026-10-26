@@ -3,11 +3,7 @@ import {
   aiPersonalityFor,
   equippedPermille,
 } from "@openfront/engine-lib/game/GrandStrategy";
-import {
-  GrandStrategyExecution,
-  grandStrategyOf,
-} from "@openfront/engine/execution/GrandStrategyExecution";
-import { vi } from "vitest";
+import { grandStrategyOf } from "@openfront/engine/execution/GrandStrategyExecution";
 import { writeFileSync } from "node:fs";
 import {
   createScriptedRunner,
@@ -16,71 +12,80 @@ import {
 } from "./util/ScriptedGame";
 
 // Opt-in balance playtest: PT_RUN=1 npx vitest --run tests/GrandStrategyPlaytest.test.ts
-// Writes per-personality snapshots every 1200 ticks to $PT_OUT.
-// PT_SEED sets the game id (map seed). PT_GS=off neutralises every Grand
-// Strategy effect on combat, troops and gold, as a control run: the same
-// nations keep their personality labels, so any gap between labels is the map.
+// Writes a frame of every nation (dead ones included) every PT_EVERY ticks
+// (default 600) after the spawn phase to $PT_OUT. PT_SEED sets the game id
+// (map seed). PT_GS=off is the control: real classic mode
+// (config.grandStrategy = false), so no GrandStrategyExecution exists and
+// every GS field in the rows is null. Nations keep their personality labels
+// (aiPersonalityFor is pure), so any gap between labels in the control run
+// is the map. Frames are read by scripts/gs-metrics.mjs.
 test.skipIf(!process.env.PT_RUN)(
   "playtest: nations-only world match",
   { timeout: 1_100_000 },
   async () => {
-    if (process.env.PT_GS === "off") {
-      const proto = GrandStrategyExecution.prototype;
-      vi.spyOn(proto, "adjustCombat").mockImplementation(
-        (_a, _d, _t, attackerTroopLoss, defenderTroopLoss) => ({
-          attackerTroopLoss,
-          defenderTroopLoss,
-        }),
-      );
-      vi.spyOn(proto, "adjustTroopGrowth").mockImplementation((_p, b) => b);
-      vi.spyOn(proto, "adjustGold").mockImplementation((_p, b) => b);
-    }
+    const gsOn = process.env.PT_GS !== "off";
     const start = scriptedGameStart({
       nations: 15,
       bots: 20,
       infiniteGold: false,
       doomsdayClock: { enabled: false, speed: "veryfast" },
+      ...(gsOn ? {} : { grandStrategy: false }),
     } as never);
     start.players = [];
     if (process.env.PT_SEED) start.gameID = process.env.PT_SEED;
     const runner = await createScriptedRunner("world", start);
     const g = runner.game;
-    if (process.env.PT_GS === "off") {
-      // Control: laws and focuses must not move the troop cap either.
-      const cfg = g.config();
-      const install = cfg.setTroopCapModifier.bind(cfg);
-      install(null);
-      cfg.setTroopCapModifier = () => install(null);
-    }
+
     const out: unknown[] = [];
     const END = Number(process.env.PT_TICKS ?? 9000);
+    const EVERY = Number(process.env.PT_EVERY ?? 600);
+    const everAlive = new Set<number>();
+    const deathTick = new Map<number, number>();
     while (g.ticks() < END) {
       stepScripted(runner);
-      if (g.ticks() % 1200 === 0 && !g.inSpawnPhase()) {
-        const gs = grandStrategyOf(g)!;
-        const rows = g
-          .players()
-          .filter((p) => p.type() === PlayerType.Nation)
-          .map((p) => {
-            const s = gs.stateOf(p)!;
-            return {
-              n: p.name(),
-              pers: aiPersonalityFor(p.smallID()),
-              tiles: p.numTilesOwned(),
-              troops: Math.floor(p.troops()),
-              maxT: g.config().maxTroops(p),
-              eq: equippedPermille(s.equipment, p.troops()),
-              eff: s.efficiency,
-              ws: s.warSupport,
-              pp: Math.floor(s.politicalPower / 1000),
-              laws: `${s.conscriptionLaw}/${s.economyLaw}`,
-              done: s.completed.length,
-              focus: s.focus,
-              gold: Number(p.gold()),
-            };
-          });
-        out.push({ tick: g.ticks(), alive: rows.length, rows });
+      const nations = g
+        .allPlayers()
+        .filter((p) => p.type() === PlayerType.Nation);
+      for (const p of nations) {
+        const id = p.smallID();
+        if (p.isAlive()) everAlive.add(id);
+        else if (everAlive.has(id) && !deathTick.has(id)) {
+          deathTick.set(id, g.ticks());
+        }
       }
+      if (g.ticks() % EVERY !== 0 || g.inSpawnPhase()) continue;
+      const gs = grandStrategyOf(g);
+      if (gsOn && gs === null) {
+        throw new Error("PT_GS=on but no GrandStrategyExecution");
+      }
+      const rows = nations.map((p) => {
+        const alive = p.isAlive();
+        const s = gs?.stateOf(p) ?? null;
+        return {
+          smallID: p.smallID(),
+          n: p.name(),
+          pers: aiPersonalityFor(p.smallID()),
+          tiles: alive ? p.numTilesOwned() : 0,
+          troops: alive ? Math.floor(p.troops()) : 0,
+          alive,
+          deathTick: deathTick.get(p.smallID()) ?? null,
+          maxT: alive ? g.config().maxTroops(p) : 0,
+          gold: Number(p.gold()),
+          eq: s ? equippedPermille(s.equipment, p.troops()) : null,
+          eff: s?.efficiency ?? null,
+          ws: s?.warSupport ?? null,
+          pp: s ? Math.floor(s.politicalPower / 1000) : null,
+          laws: s ? `${s.conscriptionLaw}/${s.economyLaw}` : null,
+          done: s ? s.completed.length : null,
+          focus: s?.focus ?? null,
+        };
+      });
+      out.push({
+        tick: g.ticks(),
+        gs: gsOn,
+        alive: rows.filter((r) => r.alive).length,
+        rows,
+      });
     }
     writeFileSync(
       process.env.PT_OUT ?? "/workspace/work/playtest.json",
