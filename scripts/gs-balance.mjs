@@ -9,7 +9,8 @@
 //   node scripts/gs-balance.mjs [--seeds 20] [--ticks 7200] [--band 8]
 //        [--snowball-target 10] [--out dir] [--a on] [--b off] [--from 0]
 //
-// --a / --b pick the two modes to compare (PT_GS values: on, off, nowar;
+// --a / --b pick the two modes to compare (PT_GS values: on, off, nowar,
+// nocivgold, notrade, nodepai = one M5 stage B part off;
 // nowar = Grand Strategy without the M4 war layer). Reports still say
 // "on" for A and "off" for B. --from skips the first seeds, so two
 // processes can fill one cache in parallel.

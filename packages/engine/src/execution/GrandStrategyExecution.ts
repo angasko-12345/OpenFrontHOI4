@@ -107,6 +107,21 @@ export class GrandStrategyExecution implements Execution {
   set warLayer(on: boolean) {
     this.warLayerOff = !on;
   }
+
+  /**
+   * M5 stage B ablation switches for the balance harness, like warLayer:
+   * absent = on, never saved. "civgold" = gold from free civilian
+   * factories, "trade" = automatic imports, "depai" = AI deposit targeting.
+   */
+  private ablated?: Set<string>;
+
+  ablate(part: "civgold" | "trade" | "depai"): void {
+    (this.ablated ??= new Set()).add(part);
+  }
+
+  private on(part: string): boolean {
+    return this.ablated?.has(part) !== true;
+  }
   /** M5 deposit tiles, derived from the map (rebuilt after a restore). */
   private steelTiles?: Uint32Array;
   private oilTiles?: Uint32Array;
@@ -259,7 +274,9 @@ export class GrandStrategyExecution implements Execution {
     const s = this.stateOf(player);
     const g =
       this.modifiers(player).gold +
-      (s === null ? 0 : civGoldPermille(freeCivFactories(s)));
+      (s === null || !this.on("civgold")
+        ? 0
+        : civGoldPermille(freeCivFactories(s)));
     if (g === 0) return base;
     const scaled = (base * BigInt(1000 + g)) / 1000n;
     return scaled < 0n ? 0n : scaled;
@@ -380,8 +397,8 @@ export class GrandStrategyExecution implements Execution {
         resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories),
         s.civFactories,
       );
-      s.importSteel = trade.steel;
-      s.importOil = trade.oil;
+      s.importSteel = this.on("trade") ? trade.steel : 0;
+      s.importOil = this.on("trade") ? trade.oil : 0;
       const res = balanceOf(s);
       advanceSecond(s, {
         factoryStructureLevels: factoryLevels,
@@ -543,7 +560,9 @@ export class GrandStrategyExecution implements Execution {
     if (!urgent && (w.warGoals.length > 0 || s.politicalPower < AI_PP_RESERVE))
       return;
     const raw = resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories);
-    const short = raw.steel < raw.steelNeeded || raw.oil < raw.oilNeeded;
+    const short =
+      this.on("depai") &&
+      (raw.steel < raw.steelNeeded || raw.oil < raw.oilNeeded);
     const target = aiJustifyTarget(w, candidates, short);
     if (target === null) return;
     const t = mg.playerBySmallID(target);
