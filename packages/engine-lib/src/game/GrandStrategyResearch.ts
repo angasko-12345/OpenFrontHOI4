@@ -11,6 +11,11 @@
  * era once it has researched ERA_ADVANCE technologies of its current era;
  * technologies of a later era stay locked until then. Doctrine roots are
  * mutually exclusive.
+ *
+ * Land technologies lean on defense: a paired 15-seed ablation (2026-10-26)
+ * showed attack-heavy research raised the snowball index by +3.4 +-1.9, since
+ * leaders attack the most. A research slowdown for large nations was tried
+ * and measured inert (-0.5 +-1.0), so it was reverted.
  */
 import type { TechID } from "@openfront/engine-api/game/GameTypes";
 import type { AiPersonality, GsModifiers } from "./GrandStrategy";
@@ -75,13 +80,13 @@ export const TECHS: readonly TechDef[] = [
   {
     id: "infantry_weapons",
     name: "Infantry Weapons",
-    description: "-3% attacker losses",
+    description: "-2% attacker losses, +2% defense",
     branch: "land",
     era: 1,
     seconds: 90,
     requires: [],
     exclusive: [],
-    effects: { attackLoss: -30 },
+    effects: { attackLoss: -20, defense: 20 },
   },
   {
     id: "field_fortifications",
@@ -164,35 +169,35 @@ export const TECHS: readonly TechDef[] = [
   {
     id: "improved_artillery",
     name: "Improved Artillery",
-    description: "-4% attacker losses",
+    description: "-2% attacker losses, +3% defense",
     branch: "land",
     era: 2,
     seconds: 150,
     requires: ["infantry_weapons"],
     exclusive: [],
-    effects: { attackLoss: -40 },
+    effects: { attackLoss: -20, defense: 30 },
   },
   {
     id: "motorization",
     name: "Motorization",
-    description: "+5% manpower growth, -2% attacker losses",
+    description: "+5% manpower growth",
     branch: "land",
     era: 2,
     seconds: 150,
     requires: [],
     exclusive: [],
-    effects: { manpower: 50, attackLoss: -20 },
+    effects: { manpower: 50 },
   },
   {
     id: "rapid_exploitation",
     name: "Rapid Exploitation",
-    description: "Maneuver doctrine: -5% attacker losses",
+    description: "Maneuver doctrine: -3% attacker losses",
     branch: "doctrine",
     era: 2,
     seconds: 150,
     requires: ["maneuver_doctrine"],
     exclusive: [],
-    effects: { attackLoss: -50 },
+    effects: { attackLoss: -30 },
   },
   {
     id: "concentrated_fire",
@@ -231,13 +236,13 @@ export const TECHS: readonly TechDef[] = [
   {
     id: "mechanized_warfare",
     name: "Mechanized Warfare",
-    description: "-6% attacker losses",
+    description: "-3% attacker losses, +3% defense",
     branch: "land",
     era: 3,
     seconds: 240,
     requires: ["motorization"],
     exclusive: [],
-    effects: { attackLoss: -60 },
+    effects: { attackLoss: -30, defense: 30 },
   },
   {
     id: "total_defense",
