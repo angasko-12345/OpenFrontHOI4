@@ -10,7 +10,7 @@
 //        [--snowball-target 10] [--out dir] [--a on] [--b off] [--from 0]
 //
 // --a / --b pick the two modes to compare (PT_GS values: on, off, nowar,
-// nocivgold, notrade, noartillery, noresearch = one M5 part off;
+// nocivgold, notrade, noartillery, noresearch, noatomic = one M5/M6 part off;
 // nowar = Grand Strategy without the M4 war layer). Reports still say
 // "on" for A and "off" for B. --from skips the first seeds, so two
 // processes can fill one cache in parallel.
@@ -106,6 +106,14 @@ const game = {
 };
 const idxDiff = [];
 let pairs = 0;
+// Nuclear weapons nations built by the last frame (M6 stage C rows only).
+const nukes = { on: [], off: [] };
+const nukesOf = (file) => {
+  const frames = JSON.parse(readFileSync(file, "utf8"));
+  const rows = frames.at(-1)?.rows ?? [];
+  if (!rows.some((r) => typeof r.nukes === "number")) return null;
+  return rows.reduce((s, r) => s + (r.nukes ?? 0), 0);
+};
 
 for (let i = from; i < seeds; i++) {
   const seed = `GSBAL${String(i).padStart(3, "0")}`;
@@ -134,6 +142,13 @@ for (let i = from; i < seeds; i++) {
     else game[mode].tick.push(r.snowballTick);
   }
   idxDiff.push(diff(a.snowballIndex, b.snowballIndex));
+  for (const [mode, f] of [
+    ["on", onFile],
+    ["off", offFile],
+  ]) {
+    const n = nukesOf(f);
+    if (n !== null) nukes[mode].push(n);
+  }
 
   const per = PERS.map(
     (p) =>
@@ -186,6 +201,11 @@ console.log(
 console.log(
   `  lead changes       on ${fmt(meanSE(game.on.lead))} | off ${fmt(meanSE(game.off.lead))}`,
 );
+if (nukes.on.length + nukes.off.length > 0) {
+  console.log(
+    `  nukes built/game   on ${fmt(meanSE(nukes.on))} | off ${fmt(meanSE(nukes.off))}`,
+  );
+}
 if (snowTarget !== null) {
   const on = meanSE(game.on.idx).mean;
   const off = meanSE(game.off.idx).mean;

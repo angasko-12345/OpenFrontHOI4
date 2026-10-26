@@ -1,4 +1,4 @@
-import { PlayerType } from "@openfront/engine-api/game/GameTypes";
+import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import {
   aiPersonalityFor,
   equippedPermille,
@@ -44,10 +44,17 @@ test.skipIf(!process.env.PT_RUN)(
     // PT_GS=nowar: Grand Strategy on, but the M4 war layer (occupation,
     // supply, war goals, coalition) off, to measure M4 on its own.
     const noWar = process.env.PT_GS === "nowar";
-    // PT_GS=nocivgold / notrade / noartillery / noresearch: one M5 part off.
-    const ablate = /^no(civgold|trade|artillery|research)$/.exec(
+    // PT_GS=nocivgold / notrade / noartillery / noresearch / noatomic: one
+    // M5/M6 part off (noatomic = nukes ungated, no atomic project).
+    const ablate = /^no(civgold|trade|artillery|research|atomic)$/.exec(
       process.env.PT_GS ?? "",
-    )?.[1] as "civgold" | "trade" | "artillery" | "research" | undefined;
+    )?.[1] as
+      | "civgold"
+      | "trade"
+      | "artillery"
+      | "research"
+      | "atomic"
+      | undefined;
     while (g.ticks() < END) {
       stepScripted(runner);
       if (noWar) {
@@ -98,6 +105,11 @@ test.skipIf(!process.env.PT_RUN)(
           guns: s ? [s.artillery, s.artilleryShare] : null,
           // M6: technologies researched.
           tech: s ? s.researched.length : null,
+          // M6 stage C: nuclear weapons built so far (atom, hydrogen, MIRV).
+          nukes:
+            p.unitsConstructed(UnitType.AtomBomb) +
+            p.unitsConstructed(UnitType.HydrogenBomb) +
+            p.unitsConstructed(UnitType.MIRV),
         };
       });
       out.push({
