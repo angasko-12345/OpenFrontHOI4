@@ -118,8 +118,8 @@ export const TILES_PER_CIV_FACTORY = 3000;
 export const CIV_FACTORIES_PER_CITY_LEVEL = 2;
 /** Resource units one civilian factory buys per second. */
 export const IMPORT_UNITS_PER_CIV = 2;
-/** Gold income per free civilian factory, per-mille (15 -> 25 in M6B to offset research). */
-export const CIV_GOLD_PERMILLE = 25;
+/** Gold income per free civilian factory, per-mille. */
+export const CIV_GOLD_PERMILLE = 15;
 /** Most gold income free civilian factories can add, per-mille. */
 export const CIV_GOLD_CAP = 250;
 
