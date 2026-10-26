@@ -85,6 +85,8 @@ test.skipIf(!process.env.PT_RUN)(
           laws: s ? `${s.conscriptionLaw}/${s.economyLaw}` : null,
           done: s ? s.completed.length : null,
           focus: s?.focus ?? null,
+          // M5: deposits held and military factories (need = f/2 steel, f/3 oil).
+          res: s ? [s.steelDeposits, s.oilDeposits, s.milFactories] : null,
         };
       });
       out.push({

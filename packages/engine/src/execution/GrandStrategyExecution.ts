@@ -33,6 +33,12 @@ import {
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  depositAt,
+  oilLossPermille,
+  resourceBalance,
+  steelProductionPermille,
+} from "@openfront/engine-lib/game/GrandStrategyEconomy";
+import {
   addOccupied,
   advanceWarSecond,
   aiJustifyTarget,
@@ -96,6 +102,9 @@ export class GrandStrategyExecution implements Execution {
   set warLayer(on: boolean) {
     this.warLayerOff = !on;
   }
+  /** M5 deposit tiles, derived from the map (rebuilt after a restore). */
+  private steelTiles?: Uint32Array;
+  private oilTiles?: Uint32Array;
   /** Small id of the coalition target, if one nation dominates. */
   private coalitionLeader: number | null = null;
 
@@ -273,6 +282,12 @@ export class GrandStrategyExecution implements Execution {
       as === null ? BASE_WAR_SUPPORT : as.warSupport,
     );
     const dMult = defenderLossMultiplier(dEquipped);
+    const oilMult =
+      as === null
+        ? 1000
+        : oilLossPermille(
+            resourceBalance(as.steelDeposits, as.oilDeposits, as.milFactories),
+          );
     const aw = this.warOf(attacker);
     const warMult =
       aw === null || !this.warLayer
@@ -285,7 +300,9 @@ export class GrandStrategyExecution implements Execution {
             inSupply: tile === undefined || this.inSupply(attacker, tile),
           });
     const aLoss =
-      (attackerTroopLoss * Math.floor((aMult * warMult) / 1000)) / 1000;
+      (attackerTroopLoss *
+        Math.floor((Math.floor((aMult * warMult) / 1000) * oilMult) / 1000)) /
+      1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
     if (as !== null) {
       as.attackLossesThisSecond += Math.floor(aLoss);
@@ -314,12 +331,13 @@ export class GrandStrategyExecution implements Execution {
     this.coalitionLeader = !this.warLayer
       ? null
       : nextCoalitionLeader(
-      this.coalitionLeader,
-      players
-        .filter((p) => p.type() !== PlayerType.Bot)
-        .map((p) => ({ id: p.smallID(), tiles: p.numTilesOwned() })),
-      mg.numLandTiles(),
-    );
+          this.coalitionLeader,
+          players
+            .filter((p) => p.type() !== PlayerType.Bot)
+            .map((p) => ({ id: p.smallID(), tiles: p.numTilesOwned() })),
+          mg.numLandTiles(),
+        );
+    const held = this.countDeposits(mg);
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
@@ -342,11 +360,21 @@ export class GrandStrategyExecution implements Execution {
         .units(UnitType.Factory)
         .filter((u) => !u.isUnderConstruction())
         .reduce((a, u) => a + u.level(), 0);
+      const h = held.get(p.smallID());
+      s.steelDeposits = h?.steel ?? 0;
+      s.oilDeposits = h?.oil ?? 0;
+      s.milFactories = militaryFactories(factoryLevels, p.numTilesOwned());
+      const res = resourceBalance(
+        s.steelDeposits,
+        s.oilDeposits,
+        s.milFactories,
+      );
       advanceSecond(s, {
         factoryStructureLevels: factoryLevels,
         tilesOwned: p.numTilesOwned(),
         maxTroops: mg.config().maxTroops(p),
         troops: Math.floor(p.troops()),
+        productionPermille: steelProductionPermille(res),
       });
       // Only humans have a HUD to feed; nations would only bloat replays.
       if (p.type() !== PlayerType.Human) continue;
@@ -368,6 +396,10 @@ export class GrandStrategyExecution implements Execution {
         advisors: [...s.advisors],
         activeDecisions: copyTimers(s.activeDecisions),
         decisionCooldowns: copyTimers(s.decisionCooldowns),
+        steel: res.steel,
+        steelNeeded: res.steelNeeded,
+        oil: res.oil,
+        oilNeeded: res.oilNeeded,
         occupied: w.occupied,
         occupationModifier: occupationCapModifier(
           w.occupied,
@@ -393,6 +425,43 @@ export class GrandStrategyExecution implements Execution {
         this.wars.delete(id);
       }
     }
+  }
+
+  /** Deposit tiles on the map: built once from terrain, never saved. */
+  depositTiles(): { steel: Uint32Array; oil: Uint32Array } {
+    if (this.steelTiles === undefined || this.oilTiles === undefined) {
+      const mg = this.mg!;
+      const steel: number[] = [];
+      const oil: number[] = [];
+      const n = mg.width() * mg.height();
+      for (let t = 0; t < n; t++) {
+        if (!mg.isLand(t)) continue;
+        const d = depositAt(t, mg.terrainType(t));
+        if (d === "steel") steel.push(t);
+        else if (d === "oil") oil.push(t);
+      }
+      this.steelTiles = Uint32Array.from(steel);
+      this.oilTiles = Uint32Array.from(oil);
+    }
+    return { steel: this.steelTiles, oil: this.oilTiles };
+  }
+
+  /** Deposit tiles each player owns right now, by small id. */
+  private countDeposits(mg: Game): Map<number, { steel: number; oil: number }> {
+    const out = new Map<number, { steel: number; oil: number }>();
+    const { steel, oil } = this.depositTiles();
+    const bump = (owner: number, k: "steel" | "oil") => {
+      if (owner === 0) return;
+      let c = out.get(owner);
+      if (c === undefined) {
+        c = { steel: 0, oil: 0 };
+        out.set(owner, c);
+      }
+      c[k]++;
+    };
+    for (const t of steel) bump(mg.ownerID(t), "steel");
+    for (const t of oil) bump(mg.ownerID(t), "oil");
+    return out;
   }
 
   private goalUpdate(
@@ -485,6 +554,9 @@ export class GrandStrategyExecution implements Execution {
         activeDecisions: copyTimers(s.activeDecisions),
         decisionCooldowns: copyTimers(s.decisionCooldowns),
         advisors: [...s.advisors],
+        steelDeposits: s.steelDeposits,
+        oilDeposits: s.oilDeposits,
+        milFactories: s.milFactories,
         ...warSnapshot(this.wars.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
@@ -511,6 +583,9 @@ export class GrandStrategyExecution implements Execution {
           activeDecisions: copyTimers(n.activeDecisions),
           decisionCooldowns: copyTimers(n.decisionCooldowns),
           advisors: [...n.advisors],
+          steelDeposits: n.steelDeposits,
+          oilDeposits: n.oilDeposits,
+          milFactories: n.milFactories,
         },
       ]),
     );
@@ -573,6 +648,9 @@ const GrandStrategyStateSchema = z.object({
       activeDecisions: z.array(TimedEntrySchema),
       decisionCooldowns: z.array(TimedEntrySchema),
       advisors: z.array(z.string()),
+      steelDeposits: zInt(),
+      oilDeposits: zInt(),
+      milFactories: zInt(),
       occupied: zInt(),
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
@@ -584,9 +662,19 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 4,
+  version: 5,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v5 added strategic resources (counted again at the next second).
+    4: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        steelDeposits: 0,
+        oilDeposits: 0,
+        milFactories: 0,
+      })),
+    }),
     // v4 added occupation, war goals and the coalition.
     3: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

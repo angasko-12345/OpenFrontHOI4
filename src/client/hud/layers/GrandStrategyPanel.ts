@@ -173,6 +173,9 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       activeDecisions: d.activeDecisions,
       decisionCooldowns: d.decisionCooldowns,
       advisors: d.advisors,
+      steelDeposits: 0,
+      oilDeposits: 0,
+      milFactories: d.factories,
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -296,6 +299,15 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="text-right">${d.politicalPower}</span>
           <span>War support</span>
           <span class="text-right">${pct(d.warSupport)}</span>
+          <span>Steel</span>
+          <span
+            class="text-right ${d.steel < d.steelNeeded ? "text-red-400" : ""}"
+            >${d.steel} / ${d.steelNeeded}</span
+          >
+          <span>Oil</span>
+          <span class="text-right ${d.oil < d.oilNeeded ? "text-red-400" : ""}"
+            >${d.oil} / ${d.oilNeeded}</span
+          >
           ${
             d.occupied > 0
               ? html`<span>Occupied land</span>

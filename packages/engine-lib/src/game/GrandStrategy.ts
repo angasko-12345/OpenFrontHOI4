@@ -442,6 +442,11 @@ export interface NationGsState {
   decisionCooldowns: TimedEntry[];
   /** Hired advisor ids, in hiring order. */
   advisors: string[];
+  /** M5: steel and oil deposit tiles held at the last second boundary. */
+  steelDeposits: number;
+  oilDeposits: number;
+  /** M5: military factories at the last second boundary. */
+  milFactories: number;
 }
 
 export interface TimedEntry {
@@ -499,6 +504,9 @@ export function newNationState(startEquipment: number): NationGsState {
     activeDecisions: [],
     decisionCooldowns: [],
     advisors: [],
+    steelDeposits: 0,
+    oilDeposits: 0,
+    milFactories: 0,
   };
 }
 
@@ -665,6 +673,8 @@ export interface NationSecondInput {
   maxTroops: number;
   /** Troops at the second boundary, for judging how heavy losses were. */
   troops: number;
+  /** Resource multiplier on production, per-mille (M5; default 1000). */
+  productionPermille?: number;
 }
 
 export interface NationSecondResult {
@@ -747,15 +757,16 @@ export function advanceSecond(
     input.factoryStructureLevels,
     input.tilesOwned,
   );
+  const base = Math.floor(
+    (factories *
+      EQUIPMENT_PER_FACTORY *
+      state.efficiency *
+      (1000 + mods.production)) /
+      1_000_000,
+  );
   const produced = Math.max(
     0,
-    Math.floor(
-      (factories *
-        EQUIPMENT_PER_FACTORY *
-        state.efficiency *
-        (1000 + mods.production)) /
-        1_000_000,
-    ),
+    Math.floor((base * (input.productionPermille ?? 1000)) / 1000),
   );
   const stockCap = Math.floor(input.maxTroops * STOCKPILE_CAP_MULTIPLE);
   const before = state.equipment;
@@ -931,8 +942,12 @@ export function aiChoose(
   let action: DecisionID | AdvisorID | null = null;
   if (law === null && state.politicalPower >= AI_PP_RESERVE) {
     action =
-      AI_ADVISORS[personality].find((id) => canTakeAction(state, id) === "ok") ??
-      AI_DECISIONS[personality].find((id) => canTakeAction(state, id) === "ok") ??
+      AI_ADVISORS[personality].find(
+        (id) => canTakeAction(state, id) === "ok",
+      ) ??
+      AI_DECISIONS[personality].find(
+        (id) => canTakeAction(state, id) === "ok",
+      ) ??
       null;
   }
   return { focus, law, action };
