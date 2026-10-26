@@ -1,0 +1,308 @@
+import { GrandStrategyUpdate } from "@openfront/engine-api/game/GameUpdates";
+import { focusById } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  ATOMIC_PROJECT,
+  techById,
+} from "@openfront/engine-lib/game/GrandStrategyResearch";
+import { html, nothing, TemplateResult } from "lit";
+import { gsIcon, GsIconName } from "./GsIcons";
+
+/** Command-panel tabs, in hotkey order (F1..F6). */
+export type GsTab =
+  | "economy"
+  | "laws"
+  | "focus"
+  | "research"
+  | "decisions"
+  | "war";
+
+export type GsAlertKind =
+  | "war"
+  | "peace"
+  | "truce"
+  | "capitulation"
+  | "research"
+  | "focus"
+  | "atomic"
+  | "wargoal"
+  | "coalition";
+
+export type GsAlertTone = "danger" | "good" | "warn" | "info";
+
+/** One alert as derived from two consecutive updates (no id/time yet). */
+export interface GsAlertDraft {
+  kind: GsAlertKind;
+  text: string;
+  tab: GsTab;
+  tone: GsAlertTone;
+  /** Player the alert is about, when it has one (peace: Accept target). */
+  target?: string;
+}
+
+export interface GsAlert extends GsAlertDraft {
+  id: number;
+  /** Date.now() when raised. */
+  born: number;
+}
+
+/** How long an alert stays, ms. Peace offers stay while the offer is open. */
+export const ALERT_MS: Record<GsAlertKind, number> = {
+  war: 10_000,
+  peace: 60_000,
+  truce: 10_000,
+  capitulation: 15_000,
+  research: 8_000,
+  focus: 8_000,
+  atomic: 10_000,
+  wargoal: 12_000,
+  coalition: 15_000,
+};
+
+export const MAX_ALERTS = 4;
+
+function added<T>(before: readonly T[], after: readonly T[]): T[] {
+  const s = new Set(before);
+  return after.filter((x) => !s.has(x));
+}
+
+/**
+ * Alerts for what changed between two Grand Strategy updates of the local
+ * nation. Pure: reads only the two updates (the client gets nothing else
+ * about these events), so it can be unit tested without a game.
+ * `capitulatedToMe` holds players whose capitulation to us arrived as a
+ * world message this tick; their new truce is reported as a capitulation.
+ */
+export function diffGsAlerts(
+  prev: GrandStrategyUpdate | null,
+  next: GrandStrategyUpdate,
+  nameOf: (id: string) => string,
+  capitulatedToMe: ReadonlySet<string> = new Set(),
+): GsAlertDraft[] {
+  if (prev === null) return [];
+  const out: GsAlertDraft[] = [];
+  const ids = <T extends { target: string }>(l: readonly T[] | undefined) =>
+    (l ?? []).map((x) => x.target);
+
+  for (const t of added(ids(prev.wars), ids(next.wars))) {
+    out.push({
+      kind: "war",
+      text: `War with ${nameOf(t)}`,
+      tab: "war",
+      tone: "danger",
+      target: t,
+    });
+  }
+  for (const t of added(
+    prev.peaceOffersToMe ?? [],
+    next.peaceOffersToMe ?? [],
+  )) {
+    out.push({
+      kind: "peace",
+      text: `${nameOf(t)} offers peace`,
+      tab: "war",
+      tone: "good",
+      target: t,
+    });
+  }
+  // Our own capitulation resets our peak land to the land we kept.
+  const iCapitulated = (next.peakTiles ?? 0) < (prev.peakTiles ?? 0);
+  for (const t of added(ids(prev.truces), ids(next.truces))) {
+    if (iCapitulated) {
+      out.push({
+        kind: "capitulation",
+        text: `We capitulated to ${nameOf(t)}`,
+        tab: "war",
+        tone: "danger",
+        target: t,
+      });
+    } else if (capitulatedToMe.has(t)) {
+      out.push({
+        kind: "capitulation",
+        text: `${nameOf(t)} capitulated to us`,
+        tab: "war",
+        tone: "good",
+        target: t,
+      });
+    } else {
+      out.push({
+        kind: "truce",
+        text: `Truce with ${nameOf(t)}`,
+        tab: "war",
+        tone: "good",
+        target: t,
+      });
+    }
+  }
+  for (const t of added(prev.justifiedAgainstMe, next.justifiedAgainstMe)) {
+    out.push({
+      kind: "wargoal",
+      text: `${nameOf(t)} seeks a war goal on us`,
+      tab: "war",
+      tone: "danger",
+      target: t,
+    });
+  }
+  if (
+    next.coalitionLeader !== null &&
+    next.coalitionLeader !== prev.coalitionLeader
+  ) {
+    const me = next.player;
+    out.push({
+      kind: "coalition",
+      text:
+        next.coalitionLeader === me
+          ? "A coalition has formed against us"
+          : `Coalition against ${nameOf(next.coalitionLeader)}`,
+      tab: "war",
+      tone: next.coalitionLeader === me ? "danger" : "info",
+      target: next.coalitionLeader,
+    });
+  }
+  for (const id of added(prev.researched, next.researched)) {
+    out.push(
+      id === ATOMIC_PROJECT
+        ? {
+            kind: "atomic",
+            text: "Our atomic project is complete",
+            tab: "research",
+            tone: "warn",
+          }
+        : {
+            kind: "research",
+            text: `Researched ${techById(id)?.name ?? id}`,
+            tab: "research",
+            tone: "info",
+          },
+    );
+  }
+  for (const id of added(prev.completed, next.completed)) {
+    out.push({
+      kind: "focus",
+      text: `Focus done: ${focusById(id)?.name ?? id}`,
+      tab: "focus",
+      tone: "info",
+    });
+  }
+  // Other nations' bombs. Many AIs start in the same second: one line.
+  const me = next.player;
+  const started = added(
+    (prev.atomicProjects ?? []).map((p) => p.player),
+    (next.atomicProjects ?? []).map((p) => p.player),
+  ).filter((p) => p !== me);
+  if (started.length === 1) {
+    out.push({
+      kind: "atomic",
+      text: `${nameOf(started[0])} started an atomic project`,
+      tab: "war",
+      tone: "warn",
+      target: started[0],
+    });
+  } else if (started.length > 1) {
+    out.push({
+      kind: "atomic",
+      text: `${started.length} nations started atomic projects`,
+      tab: "war",
+      tone: "warn",
+    });
+  }
+  const powers = added(prev.atomicPowers ?? [], next.atomicPowers ?? []).filter(
+    (p) => p !== me,
+  );
+  if (powers.length === 1) {
+    out.push({
+      kind: "atomic",
+      text: `${nameOf(powers[0])} can build nuclear weapons`,
+      tab: "war",
+      tone: "danger",
+      target: powers[0],
+    });
+  } else if (powers.length > 1) {
+    out.push({
+      kind: "atomic",
+      text: `${powers.length} nations can build nuclear weapons`,
+      tab: "war",
+      tone: "danger",
+    });
+  }
+  return out;
+}
+
+const TONE_CLASS: Record<GsAlertTone, string> = {
+  danger: "border-red-500 bg-red-950/90",
+  good: "border-emerald-500 bg-emerald-950/90",
+  warn: "border-amber-400 bg-amber-950/90",
+  info: "border-sky-500 bg-slate-900/90",
+};
+
+const KIND_ICON: Record<GsAlertKind, GsIconName> = {
+  war: "war",
+  peace: "peace",
+  truce: "peace",
+  capitulation: "war",
+  research: "research",
+  focus: "focus",
+  atomic: "atomic",
+  wargoal: "war",
+  coalition: "war",
+};
+
+export interface GsAlertHandlers {
+  open: (a: GsAlert) => void;
+  dismiss: (a: GsAlert) => void;
+  /** Accept button on a peace offer (sends the existing peace intent). */
+  accept: (a: GsAlert) => void;
+  /** Whether a peace offer from `target` is still open. */
+  offerOpen: (target: string) => boolean;
+}
+
+/** The notification stack: newest on top, tap to open the relevant tab. */
+export function renderGsAlerts(
+  alerts: readonly GsAlert[],
+  h: GsAlertHandlers,
+): TemplateResult | typeof nothing {
+  if (alerts.length === 0) return nothing;
+  return html`<div
+    class="pointer-events-none fixed right-1 z-[890] flex w-[min(272px,72vw)] flex-col gap-1
+      top-[132px] sm:top-[92px] sm:right-2"
+    data-testid="gs-alerts"
+    aria-live="polite"
+  >
+    ${alerts.map(
+      (a) =>
+        html`<div
+          class="pointer-events-auto flex items-stretch overflow-hidden rounded-md border-l-4 text-white shadow-lg ${TONE_CLASS[a.tone]}"
+          data-testid="gs-alert"
+          data-kind=${a.kind}
+        >
+          <button
+            class="flex min-h-10 min-w-0 flex-1 items-center gap-2 px-2 py-1 text-left text-xs leading-tight"
+            title="Open ${a.tab} tab"
+            @click=${() => h.open(a)}
+          >
+            ${gsIcon(KIND_ICON[a.kind], 16)}
+            <span class="min-w-0 break-words">${a.text}</span>
+          </button>
+          ${
+            a.kind === "peace" &&
+            a.target !== undefined &&
+            h.offerOpen(a.target)
+              ? html`<button
+                  class="my-1 min-h-8 shrink-0 rounded bg-emerald-600 px-2 text-xs font-semibold hover:bg-emerald-500"
+                  data-testid="gs-alert-accept"
+                  @click=${() => h.accept(a)}
+                >
+                  Accept
+                </button>`
+              : nothing
+          }
+          <button
+            class="flex min-h-10 w-9 shrink-0 items-center justify-center text-white/60 hover:text-white"
+            aria-label="Dismiss"
+            @click=${() => h.dismiss(a)}
+          >
+            ${gsIcon("close", 14)}
+          </button>
+        </div>`,
+    )}
+  </div>`;
+}
