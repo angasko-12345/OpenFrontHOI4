@@ -113,11 +113,11 @@ export class GrandStrategyExecution implements Execution {
   /**
    * M5 stage B ablation switches for the balance harness, like warLayer:
    * absent = on, never saved. "civgold" = gold from free civilian
-   * factories, "trade" = automatic imports, "depai" = AI deposit targeting.
+   * factories, "trade" = automatic imports, "artillery" = production lines.
    */
   private ablated?: Set<string>;
 
-  ablate(part: "civgold" | "trade" | "depai" | "artillery"): void {
+  ablate(part: "civgold" | "trade" | "artillery"): void {
     (this.ablated ??= new Set()).add(part);
   }
 
@@ -575,24 +575,16 @@ export class GrandStrategyExecution implements Execution {
       .map((id) => mg.playerBySmallID(id))
       .filter((n): n is Player => n.isPlayer())
       .filter((n) => this.validTarget(p, n as Player))
-      .map((n) => {
-        const ns = this.stateOf(n as Player);
-        return {
-          id: n.smallID(),
-          tiles: n.numTilesOwned(),
-          attacking: attacking.has(n.smallID()),
-          deposits: ns === null ? 0 : ns.steelDeposits + ns.oilDeposits,
-        };
-      });
+      .map((n) => ({
+        id: n.smallID(),
+        tiles: n.numTilesOwned(),
+        attacking: attacking.has(n.smallID()),
+      }));
     const urgent = candidates.some((c) => c.attacking && !hasWarGoal(w, c.id));
     // Only justify ahead of time out of spare political power.
     if (!urgent && (w.warGoals.length > 0 || s.politicalPower < AI_PP_RESERVE))
       return;
-    const raw = resourceBalance(s.steelDeposits, s.oilDeposits, s.milFactories);
-    const short =
-      this.on("depai") &&
-      (raw.steel < raw.steelNeeded || raw.oil < raw.oilNeeded);
-    const target = aiJustifyTarget(w, candidates, short);
+    const target = aiJustifyTarget(w, candidates);
     if (target === null) return;
     const t = mg.playerBySmallID(target);
     if (t.isPlayer()) this.justifyWar(p, t as Player);

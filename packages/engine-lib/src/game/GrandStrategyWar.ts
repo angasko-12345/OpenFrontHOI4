@@ -290,8 +290,6 @@ export interface JustifyCandidate {
   tiles: number;
   /** The AI is already attacking this player. */
   attacking: boolean;
-  /** M5: steel and oil deposit tiles the player holds. */
-  deposits?: number;
 }
 
 /**
@@ -302,22 +300,10 @@ export interface JustifyCandidate {
 export function aiJustifyTarget(
   s: NationWarState,
   candidates: readonly JustifyCandidate[],
-  wantResources = false,
 ): number | null {
+  // M5B's "target the richest deposits when short" rule was removed after
+  // ablation showed it never changed a game (see notes/milestones.md).
   const open = candidates.filter((c) => !hasWarGoal(s, c.id));
-  // Short of steel or oil: plan the next war against the richest deposits.
-  if (wantResources && !open.some((c) => c.attacking)) {
-    const rich = open.filter((c) => (c.deposits ?? 0) > 0);
-    const best = rich.reduce<JustifyCandidate | null>((b, c) => {
-      if (b === null) return c;
-      const d = (c.deposits ?? 0) - (b.deposits ?? 0);
-      return d > 0 ||
-        (d === 0 && (c.tiles > b.tiles || (c.tiles === b.tiles && c.id < b.id)))
-        ? c
-        : b;
-    }, null);
-    if (best !== null) return best.id;
-  }
   const pick = (list: readonly JustifyCandidate[]) =>
     list.reduce<JustifyCandidate | null>(
       (b, c) =>

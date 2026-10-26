@@ -26,8 +26,6 @@ import {
   tileHash,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
-  aiJustifyTarget,
-  newWarState,
 } from "@openfront/engine-lib/game/GrandStrategyWar";
 import {
   GrandStrategyExecution,
@@ -185,23 +183,6 @@ describe("GrandStrategyEconomy stage B: civilian factories and trade", () => {
     expect(civGoldPermille(4)).toBe(4 * CIV_GOLD_PERMILLE);
     expect(civGoldPermille(1000)).toBe(CIV_GOLD_CAP);
     expect(civGoldPermille(-3)).toBe(0);
-  });
-
-  test("AI short of resources plans a war on the richest deposits", () => {
-    const w = newWarState();
-    const c = [
-      { id: 1, tiles: 9000, attacking: false, deposits: 0 },
-      { id: 2, tiles: 3000, attacking: false, deposits: 4 },
-      { id: 3, tiles: 5000, attacking: false, deposits: 4 },
-    ];
-    expect(aiJustifyTarget(w, c)).toBe(1);
-    expect(aiJustifyTarget(w, c, true)).toBe(3);
-    // A war already under way still comes first.
-    const att = c.map((x) => (x.id === 1 ? { ...x, attacking: true } : x));
-    expect(aiJustifyTarget(w, att, true)).toBe(1);
-    // Nobody holds deposits: fall back to the largest.
-    const none = c.map((x) => ({ ...x, deposits: 0 }));
-    expect(aiJustifyTarget(w, none, true)).toBe(1);
   });
 
   test("snapshot v6 migration adds trade fields", () => {

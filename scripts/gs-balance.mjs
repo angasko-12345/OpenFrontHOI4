@@ -10,7 +10,7 @@
 //        [--snowball-target 10] [--out dir] [--a on] [--b off] [--from 0]
 //
 // --a / --b pick the two modes to compare (PT_GS values: on, off, nowar,
-// nocivgold, notrade, nodepai, noartillery = one M5 part off;
+// nocivgold, notrade, noartillery = one M5 part off;
 // nowar = Grand Strategy without the M4 war layer). Reports still say
 // "on" for A and "off" for B. --from skips the first seeds, so two
 // processes can fill one cache in parallel.
