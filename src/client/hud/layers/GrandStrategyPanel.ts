@@ -601,6 +601,14 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           >${d.research.length} / ${RESEARCH_SLOTS} slots</span
         >
       </div>
+      ${
+        d.researchSpeed < 1000
+          ? html`<div class="text-yellow-400">
+              Research speed ${Math.floor(d.researchSpeed / 10)}% (large nations
+              research slower)
+            </div>`
+          : nothing
+      }
       ${d.research.map((r) => {
         const t = techById(r.id);
         return html`<div

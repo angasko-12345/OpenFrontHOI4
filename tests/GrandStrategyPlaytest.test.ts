@@ -45,9 +45,15 @@ test.skipIf(!process.env.PT_RUN)(
     // supply, war goals, coalition) off, to measure M4 on its own.
     const noWar = process.env.PT_GS === "nowar";
     // PT_GS=nocivgold / notrade / noartillery / noresearch: one M5 part off.
-    const ablate = /^no(civgold|trade|artillery|research)$/.exec(
+    const ablate = /^no(civgold|trade|artillery|research|researchlead)$/.exec(
       process.env.PT_GS ?? "",
-    )?.[1] as "civgold" | "trade" | "artillery" | "research" | undefined;
+    )?.[1] as
+      | "civgold"
+      | "trade"
+      | "artillery"
+      | "research"
+      | "researchlead"
+      | undefined;
     while (g.ticks() < END) {
       stepScripted(runner);
       if (noWar) {
