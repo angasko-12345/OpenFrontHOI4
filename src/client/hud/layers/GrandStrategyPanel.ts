@@ -27,6 +27,10 @@ import {
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
 import {
+  CAPITULATE_PERMILLE,
+  TRUCE_SECONDS,
+} from "@openfront/engine-lib/game/GrandStrategyPeace";
+import {
   ATOMIC_PROJECT_ERA,
   canResearch,
   ERA_ADVANCE,
@@ -48,6 +52,7 @@ import { Controller } from "../../Controller";
 import {
   SendGsActionIntentEvent,
   SendJustifyWarIntentEvent,
+  SendPeaceIntentEvent,
   SendSetFocusIntentEvent,
   SendSetLawIntentEvent,
 } from "../../Transport";
@@ -128,6 +133,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     this.eventBus.emit(new SendJustifyWarIntentEvent(id));
   }
 
+  private peace(id: PlayerID) {
+    this.eventBus.emit(new SendPeaceIntentEvent(id));
+  }
+
   private name(id: string): string {
     try {
       return this.game.player(id).displayName();
@@ -196,6 +205,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       artilleryShare: d.artilleryShare,
       researched: d.researched,
       research: d.research.map((r) => ({ id: r.id, progress: r.progress })),
+      weariness: (d.weariness ?? 0) * 1000,
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -287,11 +297,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
             >
               War
               ${
-                d.justifiedAgainstMe.length > 0 && this.section !== "war"
+                (d.peaceOffersToMe ?? []).length > 0 && this.section !== "war"
                   ? html`<span
-                      class="ml-1 inline-block h-2 w-2 rounded-full bg-red-500"
+                      class="ml-1 inline-block h-2 w-2 rounded-full bg-green-400"
+                      title="Peace offered"
                     ></span>`
-                  : nothing
+                  : d.justifiedAgainstMe.length > 0 && this.section !== "war"
+                    ? html`<span
+                        class="ml-1 inline-block h-2 w-2 rounded-full bg-red-500"
+                      ></span>`
+                    : nothing
               }
             </button>
             <button
@@ -336,6 +351,18 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           <span class="text-right">${d.politicalPower}</span>
           <span>War support</span>
           <span class="text-right">${pct(d.warSupport)}</span>
+          <span>War weariness</span>
+          <span
+            class="text-right ${
+              (d.weariness ?? 0) >= 500
+                ? "text-red-400"
+                : (d.weariness ?? 0) >= 250
+                  ? "text-yellow-300"
+                  : ""
+            }"
+            data-testid="gs-weariness"
+            >${pct(d.weariness ?? 0)}</span
+          >
           <span>Civ. factories</span>
           <span class="text-right">${d.civFree} free / ${d.civFactories}</span>
           ${
@@ -696,6 +723,95 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     </div>`;
   }
 
+  /** M7 stage A: wars, peace offers and truces. */
+  private renderPeace(d: GrandStrategyUpdate) {
+    const wars = d.wars ?? [];
+    const offers = d.peaceOffers ?? [];
+    const toMe = d.peaceOffersToMe ?? [];
+    const truces = d.truces ?? [];
+    const offered = new Map(offers.map((o) => [o.target, o.seconds]));
+    const mins = (s: number) =>
+      s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+    return html`<div class="space-y-1" data-testid="gs-peace">
+      ${toMe.map(
+        (id) =>
+          html`<div
+            class="flex items-center justify-between gap-2 rounded bg-green-900/60 px-2 py-1"
+          >
+            <span class="min-w-0 truncate"
+              ><b>${this.name(id)}</b> offers peace</span
+            >
+            <button
+              class="min-h-9 shrink-0 rounded bg-green-700 px-3 hover:bg-green-600 sm:min-h-0 sm:px-2"
+              @click=${() => this.peace(id)}
+            >
+              Accept
+            </button>
+          </div>`,
+      )}
+      <div class="font-semibold">
+        Wars
+        <span class="float-right font-normal"
+          >Weariness ${Math.floor((d.weariness ?? 0) / 10)}%</span
+        >
+      </div>
+      ${
+        wars.length === 0
+          ? html`<div class="opacity-60">At peace.</div>`
+          : wars.map((w) => {
+              const pending = offered.get(w.target);
+              const theirs = toMe.includes(w.target);
+              return html`<div class="flex items-center justify-between gap-2">
+                <span class="min-w-0 truncate"
+                  >${this.name(w.target)}
+                  <span class="opacity-70"
+                    >${mins(w.seconds)}, +${w.won} / -${w.lost}</span
+                  ></span
+                >
+                <button
+                  class="min-h-9 shrink-0 rounded px-3 sm:min-h-0 sm:px-2 ${
+                    pending !== undefined
+                      ? "bg-gray-900/60 text-gray-500"
+                      : "bg-gray-700 hover:bg-gray-600"
+                  }"
+                  ?disabled=${pending !== undefined}
+                  @click=${() => this.peace(w.target)}
+                >
+                  ${
+                    theirs
+                      ? "Accept"
+                      : pending !== undefined
+                        ? `Offered ${pending}s`
+                        : "Offer peace"
+                  }
+                </button>
+              </div>`;
+            })
+      }
+      ${
+        truces.length > 0
+          ? html`<div class="font-semibold">Truces</div>
+              ${truces.map(
+                (t) =>
+                  html`<div class="flex justify-between gap-2">
+                    <span class="min-w-0 truncate">${this.name(t.target)}</span>
+                    <span class="shrink-0">${mins(t.seconds)}</span>
+                  </div>`,
+              )}`
+          : nothing
+      }
+      <div class="opacity-60">
+        Weariness grows with troops lost attacking, land lost and long wars,
+        fastest for large, over-extended nations; it raises attack losses and
+        cuts political power and war support. Below ${CAPITULATE_PERMILLE / 10}%
+        of your peak land (${renderTroops(d.peakTiles ?? 0)} tiles) while at war
+        you capitulate. Peace and capitulation bring a
+        ${TRUCE_SECONDS / 60}-minute truce: no attacks either way, land stays
+        where it is.
+      </div>
+    </div>`;
+  }
+
   private renderWar(d: GrandStrategyUpdate) {
     const canAfford = d.politicalPower * 1000 >= JUSTIFY_COST;
     const goals = new Set(d.warGoals.map((g) => g.target));
@@ -722,6 +838,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
             </div>`
           : nothing
       }
+      ${this.renderPeace(d)}
       <div class="opacity-70">
         Attacking a nation without a war goal costs 20% more troops. Fighting
         far from your capital, cities, ports and factories costs 30% more.
