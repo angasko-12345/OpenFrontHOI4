@@ -44,17 +44,20 @@ test.skipIf(!process.env.PT_RUN)(
     // PT_GS=nowar: Grand Strategy on, but the M4 war layer (occupation,
     // supply, war goals, coalition) off, to measure M4 on its own.
     const noWar = process.env.PT_GS === "nowar";
-    // PT_GS=nocivgold / notrade / noartillery / noresearch / noatomic: one
-    // M5/M6 part off (noatomic = nukes ungated, no atomic project).
-    const ablate = /^no(civgold|trade|artillery|research|atomic)$/.exec(
-      process.env.PT_GS ?? "",
-    )?.[1] as
-      | "civgold"
-      | "trade"
-      | "artillery"
-      | "research"
-      | "atomic"
-      | undefined;
+    // PT_GS=nocivgold / notrade / noartillery / noresearch / noatomic /
+    // noweariness: one M5/M6/M7 part off (noatomic = nukes ungated, no
+    // atomic project; noweariness = no war weariness, capitulation, peace).
+    const ablate =
+      /^no(civgold|trade|artillery|research|atomic|weariness)$/.exec(
+        process.env.PT_GS ?? "",
+      )?.[1] as
+        | "civgold"
+        | "trade"
+        | "artillery"
+        | "research"
+        | "atomic"
+        | "weariness"
+        | undefined;
     while (g.ticks() < END) {
       stepScripted(runner);
       if (noWar) {
@@ -110,6 +113,10 @@ test.skipIf(!process.env.PT_RUN)(
             p.unitsConstructed(UnitType.AtomBomb) +
             p.unitsConstructed(UnitType.HydrogenBomb) +
             p.unitsConstructed(UnitType.MIRV),
+          // M7 stage A: weariness per-mille, wars, truces, peak land.
+          wear: s ? Math.floor((s.weariness ?? 0) / 1000) : null,
+          wars: alive ? (gs?.peaceOf(p)?.enemies.length ?? null) : null,
+          truces: alive ? (gs?.peaceOf(p)?.truces.length ?? null) : null,
         };
       });
       out.push({
