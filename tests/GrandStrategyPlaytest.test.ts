@@ -58,6 +58,17 @@ test.skipIf(!process.env.PT_RUN)(
         | "atomic"
         | "weariness"
         | undefined;
+    // M7: count diplomacy events (peace, capitulation, truce broken) by
+    // wrapping displayMessage; harness only, the game never reads it.
+    const events: Record<string, number> = {};
+    const display = g.displayMessage.bind(g);
+    g.displayMessage = ((key: string, ...rest: unknown[]) => {
+      if (key.startsWith("events_display.gs_")) {
+        const k = key.slice("events_display.gs_".length);
+        events[k] = (events[k] ?? 0) + 1;
+      }
+      return (display as (...a: unknown[]) => void)(key, ...rest);
+    }) as typeof g.displayMessage;
     while (g.ticks() < END) {
       stepScripted(runner);
       if (noWar) {
@@ -123,6 +134,7 @@ test.skipIf(!process.env.PT_RUN)(
         tick: g.ticks(),
         gs: gsOn,
         alive: rows.filter((r) => r.alive).length,
+        events: { ...events },
         rows,
       });
     }
