@@ -55,7 +55,12 @@ import {
   advancePeaceTimers,
   advanceWeariness,
   aiAcceptsPeace,
+  aiBreaksTruce,
   aiPeaceTarget,
+  BREAK_PP_COST,
+  BREAK_WAR_SUPPORT,
+  BREAK_WEARINESS,
+  canBreakTruce,
   capitulationTarget,
   enemyEntry,
   hasOffered,
@@ -65,8 +70,10 @@ import {
   NationPeaceState,
   newPeaceState,
   recordConquest,
+  removeTruce,
   TimedTarget,
-  TRUCE_SECONDS,
+  truceLockSeconds,
+  WEARINESS_MAX,
   wearinessPermille,
 } from "@openfront/engine-lib/game/GrandStrategyPeace";
 import {
@@ -128,7 +135,11 @@ export type PeaceCheck =
   | "not_at_war"
   | "truce"
   | "invalid_target"
-  | "disabled";
+  | "disabled"
+  | "broken"
+  | "no_truce"
+  | "locked"
+  | "no_political_power";
 
 export interface CombatAdjustment {
   attackerTroopLoss: number;
@@ -328,9 +339,43 @@ export class GrandStrategyExecution implements Execution {
     return "offered";
   }
 
-  /** Truce between two nations, from a peace deal or a capitulation. */
+  /**
+   * Truce between two nations, from a peace deal or a capitulation (`a`
+   * capitulates). The minimum lock follows truceLockSeconds.
+   */
   private makePeace(a: Player, b: Player, why: "peace" | "capitulation"): void {
-    addTruce(this.peaceOf(a)!, a.smallID(), this.peaceOf(b)!, b.smallID());
+    const pa = this.peaceOf(a)!;
+    const pb = this.peaceOf(b)!;
+    const ea = enemyEntry(pa, b.smallID());
+    const eb = enemyEntry(pb, a.smallID());
+    const aLost = ea?.lost ?? 0;
+    const bLost = eb?.lost ?? 0;
+    // The capitulating side lost; in a peace, the side that lost more land
+    // (a draw: the smaller side).
+    const aLoses =
+      why === "capitulation" ||
+      aLost > bLost ||
+      (aLost === bLost && a.numTilesOwned() <= b.numTilesOwned());
+    const [loser, winner, loserState, lost] = aLoses
+      ? [a, b, pa, aLost]
+      : [b, a, pb, bLost];
+    const peak = Math.max(1, loserState.peakTiles, loser.numTilesOwned());
+    const lostPermille =
+      why === "capitulation"
+        ? Math.floor(
+            (Math.max(lost, peak - loser.numTilesOwned()) * 1000) / peak,
+          )
+        : Math.floor((lost * 1000) / peak);
+    const lock = truceLockSeconds({
+      capitulation: why === "capitulation",
+      loserLostPermille: lostPermille,
+      loserTiles: loser.numTilesOwned(),
+      winnerTiles: winner.numTilesOwned(),
+      warSeconds: Math.max(ea?.seconds ?? 0, eb?.seconds ?? 0),
+      wearinessA: wearinessPermille(this.states.get(a.smallID())?.weariness),
+      wearinessB: wearinessPermille(this.states.get(b.smallID())?.weariness),
+    });
+    addTruce(pa, a.smallID(), pb, b.smallID(), lock);
     this.mg?.displayMessage(
       why === "peace"
         ? "events_display.gs_peace_signed"
@@ -341,11 +386,58 @@ export class GrandStrategyExecution implements Execution {
       {
         name: a.displayName(),
         other: b.displayName(),
-        minutes: Math.floor(TRUCE_SECONDS / 60),
+        minutes: Math.ceil(lock / 60),
       },
       undefined,
       a.id(),
     );
+  }
+
+  /**
+   * Break the truce with `target` once its minimum lock is over: costs
+   * political power, war support and weariness, and hands the victim a
+   * defensive war goal against the breaker. Told to every player.
+   */
+  breakTruce(player: Player, target: Player): PeaceCheck {
+    if (!this.on("weariness")) return "disabled";
+    if (
+      target === player ||
+      !target.isAlive() ||
+      !player.isAlive() ||
+      target.type() === PlayerType.Bot ||
+      player.type() === PlayerType.Bot
+    ) {
+      return "invalid_target";
+    }
+    const mine = this.peaceOf(player)!;
+    const check = canBreakTruce(mine, target.smallID());
+    if (check !== "ok") return check;
+    const s = this.stateOf(player)!;
+    if (s.politicalPower < BREAK_PP_COST) return "no_political_power";
+    s.politicalPower -= BREAK_PP_COST;
+    s.warSupport = Math.max(
+      0,
+      Math.min(1000, s.warSupport + BREAK_WAR_SUPPORT),
+    );
+    s.weariness = Math.min(WEARINESS_MAX, (s.weariness ?? 0) + BREAK_WEARINESS);
+    removeTruce(
+      mine,
+      player.smallID(),
+      this.peaceOf(target)!,
+      target.smallID(),
+    );
+    if (this.warLayer)
+      grantDefensiveGoal(this.warOf(target)!, player.smallID());
+    this.mg?.displayMessage(
+      "events_display.gs_truce_broken",
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      { name: player.displayName(), other: target.displayName() },
+      undefined,
+      player.id(),
+    );
+    return "broken";
   }
 
   coalitionLeaderId(): number | null {
@@ -790,9 +882,9 @@ export class GrandStrategyExecution implements Execution {
         ps.enemies = ps.enemies.filter((e) => e.target !== t);
         continue;
       }
+      this.makePeace(p, winner as Player, "capitulation");
       // A second capitulation needs another large loss from here.
       ps.peakTiles = p.numTilesOwned();
-      this.makePeace(p, winner as Player, "capitulation");
     }
     const coalition = this.warLayer ? this.coalitionLeader : null;
     for (const p of live) {
@@ -817,10 +909,41 @@ export class GrandStrategyExecution implements Execution {
         s.weariness ?? 0,
         coalition,
       );
-      if (target === null) continue;
-      const t = mg.playerBySmallID(target);
-      if (t.isPlayer() && (t as Player).isAlive()) {
-        this.offerPeace(p, t as Player);
+      if (target !== null) {
+        const t = mg.playerBySmallID(target);
+        if (t.isPlayer() && (t as Player).isAlive()) {
+          this.offerPeace(p, t as Player);
+        }
+      }
+      this.aiBreakTruce(p, s, ps);
+    }
+  }
+
+  /** A strong, fresh AI breaks at most one breakable truce a second. */
+  private aiBreakTruce(
+    p: Player,
+    s: NationGsState,
+    ps: NationPeaceState,
+  ): void {
+    const personality = aiPersonalityFor(p.smallID());
+    const troops = Math.floor(p.troops());
+    for (const t of ps.truces) {
+      if (t.lock > 0) continue;
+      const o = this.mg!.playerBySmallID(t.target);
+      if (!o.isPlayer() || !(o as Player).isAlive()) continue;
+      const other = o as Player;
+      const theirs = Math.max(1, Math.floor(other.troops()));
+      const input = {
+        strengthPermille: Math.floor((troops * 1000) / theirs),
+        weariness: wearinessPermille(s.weariness),
+        wars: ps.enemies.length,
+        borders: true,
+        canPay: s.politicalPower >= BREAK_PP_COST,
+      };
+      // The border walk last: it is the only costly input.
+      if (aiBreaksTruce(personality, input) && p.sharesBorderWith(other)) {
+        this.breakTruce(p, other);
+        return;
       }
     }
   }
@@ -834,6 +957,11 @@ export class GrandStrategyExecution implements Execution {
     };
     const timed = (list: readonly TimedTarget[]) =>
       list.map((t) => ({ target: idOf(t.target), seconds: t.seconds }));
+    const truces = (ps?.truces ?? []).map((t) => ({
+      target: idOf(t.target),
+      seconds: t.seconds,
+      lock: t.lock,
+    }));
     const offersToMe: string[] = [];
     // Small-id order: map order differs after a snapshot restore.
     const ids = [...this.peace.keys()].sort((x, y) => x - y);
@@ -853,7 +981,7 @@ export class GrandStrategyExecution implements Execution {
       })),
       peaceOffers: timed(ps?.offers ?? []),
       peaceOffersToMe: offersToMe,
-      truces: timed(ps?.truces ?? []),
+      truces,
       peakTiles: ps?.peakTiles ?? 0,
     };
   }
@@ -1152,6 +1280,11 @@ function peaceSnapshot(p: NationPeaceState | undefined) {
 
 const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
 const TimedTargetSchema = z.object({ target: zInt(), seconds: zInt() });
+const TruceSchema = z.object({
+  target: zInt(),
+  seconds: zInt(),
+  lock: zInt(),
+});
 const WarGoalSchema = z.object({
   target: zInt(),
   seconds: zInt(),
@@ -1203,7 +1336,7 @@ const GrandStrategyStateSchema = z.object({
           lost: zInt(),
         }),
       ),
-      truces: z.array(TimedTargetSchema),
+      truces: z.array(TruceSchema),
       offers: z.array(TimedTargetSchema),
     }),
   ),
@@ -1213,9 +1346,21 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 9,
+  version: 10,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v10 (M7 stage A.2) gave truces a minimum lock; older truces could
+    // never be broken, so they stay locked until they expire.
+    9: (d: {
+      initialized: boolean;
+      states: { truces: { target: number; seconds: number }[] }[];
+    }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        truces: n.truces.map((t) => ({ ...t, lock: t.seconds })),
+      })),
+    }),
     // v9 added war weariness, wars, truces and peace offers (M7 stage A).
     8: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

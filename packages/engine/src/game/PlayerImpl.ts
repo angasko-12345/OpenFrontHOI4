@@ -1651,6 +1651,10 @@ export class PlayerImpl implements Player {
       if (this.isOnSameTeam(owner) && !gameOver) {
         return false;
       }
+      // Grand Strategy truce: no nukes at the partner (never in classic).
+      if (mg.config().isAttackLocked(this, owner)) {
+        return false;
+      }
     }
     const config = mg.config();
 

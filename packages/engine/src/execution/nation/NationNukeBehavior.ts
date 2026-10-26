@@ -199,6 +199,8 @@ export class NationNukeBehavior {
     if (
       nukeTarget.type() === PlayerType.Bot || // Don't nuke tribes (as opposed to nations and humans)
       this.player.isOnSameTeam(nukeTarget) ||
+      // Grand Strategy truce (never locked in classic games).
+      config.isAttackLocked(this.player, nukeTarget) ||
       this.attackBehavior.shouldAttack(nukeTarget) === false
     ) {
       return;

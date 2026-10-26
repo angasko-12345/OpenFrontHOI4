@@ -127,7 +127,11 @@ export class Executor {
       case "justify_war":
         return new JustifyWarExecution(player, intent.targetID);
       case "peace":
-        return new PeaceExecution(player, intent.targetID);
+        return new PeaceExecution(
+          player,
+          intent.targetID,
+          intent.mode ?? "offer",
+        );
       case "build_unit":
         return new ConstructionExecution(
           player,

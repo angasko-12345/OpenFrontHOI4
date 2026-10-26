@@ -214,8 +214,9 @@ export interface GrandStrategyUpdate {
   peaceOffers: { target: string; seconds: number }[];
   /** Players offering peace to this player. */
   peaceOffersToMe: string[];
-  /** Truces (no attacks either way) and seconds left. */
-  truces: { target: string; seconds: number }[];
+  /** Truces (no attacks or nukes either way): seconds until they expire,
+   * and seconds they still cannot be broken (0 = breakable, M7 A.2). */
+  truces: { target: string; seconds: number; lock: number }[];
   /** Most land held, tiles (capitulation below half of it while at war). */
   peakTiles: number;
 }

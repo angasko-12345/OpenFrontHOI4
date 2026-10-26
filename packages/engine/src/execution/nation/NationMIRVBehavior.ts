@@ -141,15 +141,15 @@ export function isMirvWorthSavingFor(game: Game, player: Player): boolean {
 }
 
 function validMirvTargets(game: Game, player: Player): Player[] {
-  return game
-    .players()
-    .filter(
-      (p) =>
-        p !== player &&
-        p.isPlayer() &&
-        p.type() !== PlayerType.Bot &&
-        !player.isOnSameTeam(p),
-    );
+  return game.players().filter(
+    (p) =>
+      p !== player &&
+      p.isPlayer() &&
+      p.type() !== PlayerType.Bot &&
+      !player.isOnSameTeam(p) &&
+      // Grand Strategy truce (never locked in classic games).
+      !game.config().isAttackLocked(player, p),
+  );
 }
 
 export class NationMIRVBehavior {

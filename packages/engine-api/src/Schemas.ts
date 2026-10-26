@@ -509,10 +509,15 @@ export const JustifyWarIntentSchema = z.object({
   targetID: MappedID,
 });
 
-/** Grand Strategy: offer peace to a nation at war with us, or accept its offer. */
+/**
+ * Grand Strategy: offer peace to a nation at war with us, or accept its
+ * offer; mode "break" breaks a truce with it once the truce is breakable.
+ * Absent mode = "offer" (intents from before M7 stage A.2).
+ */
 export const PeaceIntentSchema = z.object({
   type: z.literal("peace"),
   targetID: MappedID,
+  mode: z.enum(["offer", "break"]).optional(),
 });
 
 export const DonateGoldIntentSchema = z.object({

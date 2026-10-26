@@ -13,8 +13,11 @@
  * - Capitulation: a nation that keeps less than CAPITULATE_PERMILLE of its
  *   peak land gets a truce with its main attacker, who keeps what it took.
  * - Peace: an offer between nations at war; accepted, it becomes a truce.
- * - A truce forbids attacks between the pair for TRUCE_SECONDS. It is a
- *   lock on attacking only, not an alliance.
+ * - A truce forbids attacks between the pair. It is a lock on attacking
+ *   (and nuking) only, not an alliance. Stage A.2: its minimum lock is
+ *   dynamic (truceLockSeconds); after it the truce still holds but either
+ *   side may break it at a price, until it expires TRUCE_BREAKABLE_SECONDS
+ *   later.
  */
 import type { AiPersonality } from "./GrandStrategy";
 
@@ -46,8 +49,30 @@ export const WEARY_WAR_SUPPORT = -500;
 export const CAPITULATE_PERMILLE = 500;
 /** Peak land must be at least this share of the world (per-mille) to count. */
 export const CAPITULATE_MIN_PEAK_PERMILLE = 5;
-/** Seconds a truce (from peace or capitulation) forbids attacks. */
-export const TRUCE_SECONDS = 300;
+/**
+ * Stage A.2 truce lock (seconds a truce cannot be broken), see
+ * truceLockSeconds. Clamped to [TRUCE_MIN_LOCK, TRUCE_MAX_LOCK].
+ */
+export const TRUCE_MIN_LOCK = 120;
+export const TRUCE_MAX_LOCK = 480;
+/** Base lock after a negotiated peace and after a capitulation. */
+export const TRUCE_PEACE_BASE = 180;
+export const TRUCE_CAPITULATION_BASE = 300;
+/** Extra lock when the loser lost all of its peak land (scaled by share). */
+export const TRUCE_LAND_SECONDS = 180;
+/** Extra lock when the loser is tiny next to the winner (scaled by gap). */
+export const TRUCE_SIZE_SECONDS = 120;
+/** Wars shorter than this get a shorter lock: 1 s less per 2 s short. */
+export const TRUCE_SHORT_WAR = 120;
+/** Less lock when both sides are calm (weariness below TRUCE_CALM_WEARINESS). */
+export const TRUCE_CALM_SECONDS = 60;
+export const TRUCE_CALM_WEARINESS = 100;
+/** After the lock, a truce holds (breakable) this long, then expires. */
+export const TRUCE_BREAKABLE_SECONDS = 240;
+/** Breaking a truce: political power (thousandths), war support, weariness. */
+export const BREAK_PP_COST = 100_000;
+export const BREAK_WAR_SUPPORT = -100;
+export const BREAK_WEARINESS = 100_000;
 /** Seconds a peace offer stays open. */
 export const OFFER_SECONDS = 60;
 
@@ -69,6 +94,15 @@ export interface TimedTarget {
   seconds: number;
 }
 
+/** A truce, mirrored on both sides. */
+export interface Truce {
+  target: number;
+  /** Seconds until it expires on its own. */
+  seconds: number;
+  /** Seconds it still cannot be broken (0 = breakable). */
+  lock: number;
+}
+
 export interface NationPeaceState {
   /** Most land held (tiles), reset after a capitulation. */
   peakTiles: number;
@@ -77,8 +111,8 @@ export interface NationPeaceState {
   /** Troops lost attacking nations (not tribes) since the last second boundary. */
   lossesThisSecond: number;
   enemies: EnemyEntry[];
-  /** Truces (mirrored on both sides) and their seconds left. */
-  truces: TimedTarget[];
+  /** Truces (mirrored on both sides), seconds left and lock left. */
+  truces: Truce[];
   /** Peace offers this nation made, and their seconds left. */
   offers: TimedTarget[];
 }
@@ -100,6 +134,13 @@ export function wearinessPermille(weariness: number | undefined): number {
 
 export function hasTruce(s: NationPeaceState, target: number): boolean {
   return s.truces.some((t) => t.target === target);
+}
+
+export function truceWith(
+  s: NationPeaceState,
+  target: number,
+): Truce | undefined {
+  return s.truces.find((t) => t.target === target);
 }
 
 export function enemyEntry(
@@ -144,7 +185,11 @@ export function advancePeaceTimers(
   }
   s.enemies = s.enemies.filter((e) => e.idle <= WAR_IDLE_SECONDS);
   s.truces = s.truces
-    .map((t) => ({ target: t.target, seconds: t.seconds - 1 }))
+    .map((t) => ({
+      target: t.target,
+      seconds: t.seconds - 1,
+      lock: Math.max(0, t.lock - 1),
+    }))
     .filter((t) => t.seconds > 0);
   s.offers = s.offers
     .map((t) => ({ target: t.target, seconds: t.seconds - 1 }))
@@ -226,13 +271,66 @@ export function capitulationTarget(
   return best?.target ?? null;
 }
 
-/** Truce between two sides; their war and any offers between them end. */
+export interface TruceLockInput {
+  capitulation: boolean;
+  /** Share of its peak land the losing side lost, per-mille. */
+  loserLostPermille: number;
+  /** Land of the losing and winning side now, tiles. */
+  loserTiles: number;
+  winnerTiles: number;
+  /** Seconds the war lasted. */
+  warSeconds: number;
+  /** Weariness of both sides, per-mille. */
+  wearinessA: number;
+  wearinessB: number;
+}
+
+/**
+ * Minimum lock of a new truce, seconds. A capitulation locks longer than a
+ * negotiated peace (the loser needs time to recover, which is the point of
+ * the anti-snowball lever); more land lost and a bigger size gap lengthen
+ * it (protects small losers from being finished off); a short war or two
+ * calm (weariness-free) sides shorten it (a skirmish should not freeze the
+ * border for long, so the map keeps moving). Clamped to
+ * [TRUCE_MIN_LOCK, TRUCE_MAX_LOCK].
+ */
+export function truceLockSeconds(i: TruceLockInput): number {
+  let s = i.capitulation ? TRUCE_CAPITULATION_BASE : TRUCE_PEACE_BASE;
+  s += Math.floor(
+    (clamp(i.loserLostPermille, 0, 1000) * TRUCE_LAND_SECONDS) / 1000,
+  );
+  const ratio =
+    i.winnerTiles <= 0
+      ? 1000
+      : Math.min(
+          1000,
+          Math.floor((Math.max(0, i.loserTiles) * 1000) / i.winnerTiles),
+        );
+  s += Math.floor(((1000 - ratio) * TRUCE_SIZE_SECONDS) / 1000);
+  if (i.warSeconds < TRUCE_SHORT_WAR) {
+    s -= Math.floor((TRUCE_SHORT_WAR - Math.max(0, i.warSeconds)) / 2);
+  }
+  if (
+    i.wearinessA < TRUCE_CALM_WEARINESS &&
+    i.wearinessB < TRUCE_CALM_WEARINESS
+  ) {
+    s -= TRUCE_CALM_SECONDS;
+  }
+  return clamp(Math.floor(s), TRUCE_MIN_LOCK, TRUCE_MAX_LOCK);
+}
+
+/**
+ * Truce between two sides, locked for `lock` seconds and expiring
+ * TRUCE_BREAKABLE_SECONDS after that; their war and offers end.
+ */
 export function addTruce(
   a: NationPeaceState,
   aId: number,
   b: NationPeaceState,
   bId: number,
+  lock: number = TRUCE_MIN_LOCK,
 ): void {
+  const l = clamp(Math.floor(lock), 0, TRUCE_MAX_LOCK);
   for (const [s, other] of [
     [a, bId],
     [b, aId],
@@ -240,8 +338,79 @@ export function addTruce(
     s.enemies = s.enemies.filter((e) => e.target !== other);
     s.offers = s.offers.filter((o) => o.target !== other);
     s.truces = s.truces.filter((t) => t.target !== other);
-    s.truces.push({ target: other, seconds: TRUCE_SECONDS });
+    s.truces.push({
+      target: other,
+      seconds: l + TRUCE_BREAKABLE_SECONDS,
+      lock: l,
+    });
   }
+}
+
+export type BreakCheck = "ok" | "no_truce" | "locked";
+
+/** Whether `s` may break its truce with `target` now. */
+export function canBreakTruce(s: NationPeaceState, target: number): BreakCheck {
+  const t = truceWith(s, target);
+  if (t === undefined) return "no_truce";
+  return t.lock > 0 ? "locked" : "ok";
+}
+
+/** End the truce between two sides (both mirrors). */
+export function removeTruce(
+  a: NationPeaceState,
+  aId: number,
+  b: NationPeaceState,
+  bId: number,
+): void {
+  a.truces = a.truces.filter((t) => t.target !== bId);
+  b.truces = b.truces.filter((t) => t.target !== aId);
+}
+
+/** Troop strength (own / partner, per-mille) an AI wants before breaking. */
+export const AI_BREAK_STRENGTH: Readonly<Record<AiPersonality, number>> = {
+  militarist: 1500,
+  industrialist: 2500,
+  defender: 4000,
+};
+/** Most weariness (per-mille) at which an AI still breaks a truce. */
+export const AI_BREAK_MAX_WEARINESS: Readonly<Record<AiPersonality, number>> = {
+  militarist: 150,
+  industrialist: 75,
+  defender: 30,
+};
+/** Most other wars an AI may be fighting when it breaks a truce. */
+export const AI_BREAK_MAX_WARS: Readonly<Record<AiPersonality, number>> = {
+  militarist: 1,
+  industrialist: 0,
+  defender: 0,
+};
+
+export interface AiBreakInput {
+  /** Own troops / partner troops, per-mille. */
+  strengthPermille: number;
+  /** Own weariness, per-mille. */
+  weariness: number;
+  /** Wars being fought now. */
+  wars: number;
+  /** Shares a land border with the partner. */
+  borders: boolean;
+  /** Can pay BREAK_PP_COST. */
+  canPay: boolean;
+}
+
+/**
+ * Whether an AI breaks a breakable truce: only when much stronger, fresh,
+ * not busy elsewhere, next door and able to pay. Militarists need the
+ * least edge, defenders almost never break.
+ */
+export function aiBreaksTruce(
+  personality: AiPersonality,
+  i: AiBreakInput,
+): boolean {
+  if (!i.borders || !i.canPay) return false;
+  if (i.wars > AI_BREAK_MAX_WARS[personality]) return false;
+  if (i.weariness > AI_BREAK_MAX_WEARINESS[personality]) return false;
+  return i.strengthPermille >= AI_BREAK_STRENGTH[personality];
 }
 
 export function hasOffered(s: NationPeaceState, target: number): boolean {

@@ -10,11 +10,15 @@ import type {
 } from "../snapshot/SnapshotContext";
 import { grandStrategyOf } from "./GrandStrategyExecution";
 
-/** A player offers peace to a nation it is at war with, or accepts its offer. One-shot. */
+/**
+ * A player offers peace to a nation it is at war with, or accepts its
+ * offer; or ("break") breaks a breakable truce with it. One-shot.
+ */
 export class PeaceExecution implements Execution {
   constructor(
     private player: Player,
     private targetID: PlayerID,
+    private mode: "offer" | "break" = "offer",
   ) {}
 
   init(mg: Game, _: number): void {
@@ -24,7 +28,18 @@ export class PeaceExecution implements Execution {
       console.warn(`PeaceExecution target ${this.targetID} not found`);
       return;
     }
-    const result = gs.offerPeace(this.player, mg.player(this.targetID));
+    const target = mg.player(this.targetID);
+    // Restored executions skip field initializers: absent mode = offer.
+    if (this.mode === "break") {
+      const result = gs.breakTruce(this.player, target);
+      if (result !== "broken") {
+        console.warn(
+          `${this.player.displayName()} cannot break the truce with ${this.targetID}: ${result}`,
+        );
+      }
+      return;
+    }
+    const result = gs.offerPeace(this.player, target);
     if (result !== "offered" && result !== "accepted") {
       console.warn(
         `${this.player.displayName()} cannot make peace with ${this.targetID}: ${result}`,
@@ -46,18 +61,21 @@ export class PeaceExecution implements Execution {
     return PeaceExecutionSnapshot.write({
       player: w.player(this.player),
       targetID: this.targetID,
+      ...(this.mode === "break" ? { mode: "break" as const } : {}),
     });
   }
 
   restoreSnapshot(s: PeaceState, r: SnapshotReader): void {
     this.player = r.player(s.player);
     this.targetID = s.targetID;
+    this.mode = s.mode ?? "offer";
   }
 }
 
 const PeaceStateSchema = z.object({
   player: zPlayerRef(),
   targetID: z.string(),
+  mode: z.enum(["offer", "break"]).optional(),
 });
 type PeaceState = z.infer<typeof PeaceStateSchema>;
 
