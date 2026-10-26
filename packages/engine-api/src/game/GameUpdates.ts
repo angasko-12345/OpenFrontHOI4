@@ -182,8 +182,6 @@ export interface GrandStrategyUpdate {
   artillerySupport: number;
   /** M6: era, researched technologies, and slots in progress. */
   era: number;
-  /** Research speed, per-mille (big nations research slower). */
-  researchSpeed: number;
   researched: string[];
   research: { id: string; progress: number; cost: number }[];
   /** M5: steel and oil available per second (imports included), and need. */

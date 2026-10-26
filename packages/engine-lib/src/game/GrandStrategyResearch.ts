@@ -41,32 +41,6 @@ export const RESEARCH_PER_SECOND = 1000;
 export const CATCH_UP_DISCOUNT = 300;
 /** Share of other nations (per-mille) that must know it for the discount. */
 export const CATCH_UP_SHARE = 500;
-/**
- * M6 stage B: big nations research slower (anti-snowball). Full speed up to
- * LEADER_SHARE_FREE per-mille of the map's land; speed then falls linearly to
- * LEADER_MIN_SPEED at LEADER_SHARE_FULL.
- */
-export const LEADER_SHARE_FREE = 150;
-export const LEADER_SHARE_FULL = 450;
-export const LEADER_MIN_SPEED = 500;
-
-/** Research speed, per-mille, for a nation holding `tiles` of `landTiles`. */
-export function researchSpeedPermille(
-  tiles: number,
-  landTiles: number,
-): number {
-  if (landTiles <= 0) return 1000;
-  const share = Math.floor((tiles * 1000) / landTiles);
-  if (share <= LEADER_SHARE_FREE) return 1000;
-  if (share >= LEADER_SHARE_FULL) return LEADER_MIN_SPEED;
-  return (
-    1000 -
-    Math.floor(
-      ((share - LEADER_SHARE_FREE) * (1000 - LEADER_MIN_SPEED)) /
-        (LEADER_SHARE_FULL - LEADER_SHARE_FREE),
-    )
-  );
-}
 
 const DOCTRINES: readonly TechID[] = [
   "maneuver_doctrine",
@@ -361,15 +335,13 @@ export function startResearch(s: ResearchState, id: string): ResearchCheck {
 export function advanceResearch(
   s: ResearchState,
   knownBy: (id: string) => number,
-  speedPermille = 1000,
 ): string[] {
   const done: string[] = [];
   const left: ResearchSlot[] = [];
   for (const slot of s.research) {
     const t = TECH_BY_ID.get(slot.id);
     if (t === undefined || s.researched.includes(slot.id)) continue;
-    const progress =
-      slot.progress + Math.floor((RESEARCH_PER_SECOND * speedPermille) / 1000);
+    const progress = slot.progress + RESEARCH_PER_SECOND;
     if (progress >= techCost(t, knownBy(slot.id))) {
       s.researched.push(slot.id);
       done.push(slot.id);

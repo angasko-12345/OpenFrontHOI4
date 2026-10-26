@@ -19,9 +19,7 @@ import {
   ERA_ADVANCE,
   MAX_ERA,
   RESEARCH_PER_SECOND,
-  LEADER_MIN_SPEED,
   RESEARCH_SLOTS,
-  researchSpeedPermille,
   ResearchState,
   startResearch,
   techById,
@@ -136,30 +134,6 @@ describe("GrandStrategyResearch rules", () => {
     expect(slow.research).toEqual([]);
   });
 
-  test("big nations research slower", () => {
-    expect(researchSpeedPermille(0, 0)).toBe(1000);
-    expect(researchSpeedPermille(150, 1000)).toBe(1000);
-    expect(researchSpeedPermille(300, 1000)).toBe(750);
-    expect(researchSpeedPermille(450, 1000)).toBe(LEADER_MIN_SPEED);
-    expect(researchSpeedPermille(900, 1000)).toBe(LEADER_MIN_SPEED);
-    // Monotonic.
-    let last = 1000;
-    for (let t = 0; t <= 1000; t += 7) {
-      const v = researchSpeedPermille(t, 1000);
-      expect(v).toBeLessThanOrEqual(last);
-      last = v;
-    }
-    // Half speed takes twice as long.
-    const t = techById("propaganda_bureau")!;
-    const s = fresh();
-    startResearch(s, t.id);
-    let at = 0;
-    for (let sec = 1; sec <= t.seconds * 2 && at === 0; sec++) {
-      if (advanceResearch(s, () => 0, 500).length > 0) at = sec;
-    }
-    expect(at).toBe(t.seconds * 2);
-  });
-
   test("researched technologies feed the modifiers", () => {
     const s = newNationState(0);
     const before = modifiersOf(s).production;
@@ -241,12 +215,9 @@ describe("GrandStrategyResearch in a game", () => {
   }
 
   test("a human researches through the intent; nations research on their own", () => {
-    const gs = grandStrategyOf(game)!;
-    // The test map is tiny, so every player is a "large nation": time the
-    // research at full speed here; the leader slowdown is tested below.
-    gs.ablate("researchlead");
     game.addExecution(new GsActionExecution(a, "infantry_weapons"));
     seconds(1);
+    const gs = grandStrategyOf(game)!;
     const s = gs.stateOf(a)!;
     expect(s.research.map((r) => r.id)).toEqual(["infantry_weapons"]);
     const n = game.player("n_id");
@@ -265,21 +236,6 @@ describe("GrandStrategyResearch in a game", () => {
     const rs = grandStrategyOf(restored)!.stateOf(restored.player(a.id()))!;
     expect(rs.researched).toEqual(["propaganda_bureau"]);
     expect(rs.research).toEqual(gs.stateOf(a)!.research);
-  });
-
-  test("a nation holding much of the map researches slower", () => {
-    const gs = grandStrategyOf(game)!;
-    game.addExecution(new GsActionExecution(a, "infantry_weapons"));
-    seconds(1);
-    const before = gs.stateOf(a)!.research[0]!.progress;
-    seconds(10);
-    const after = gs.stateOf(a)!.research[0]!.progress;
-    // On the tiny test map A quickly holds well over the free share.
-    expect(
-      researchSpeedPermille(a.numTilesOwned(), game.numLandTiles()),
-    ).toBeLessThan(1000);
-    expect(after - before).toBeLessThan(10 * 1000);
-    expect(after - before).toBeGreaterThanOrEqual(10 * LEADER_MIN_SPEED);
   });
 
   test("the research ablation switch clears and stops research", () => {

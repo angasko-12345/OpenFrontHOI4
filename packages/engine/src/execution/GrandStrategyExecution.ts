@@ -50,7 +50,6 @@ import {
   aiResearch,
   eraOf,
   RESEARCH_SLOTS,
-  researchSpeedPermille,
   techById,
   techCost,
 } from "@openfront/engine-lib/game/GrandStrategyResearch";
@@ -126,9 +125,7 @@ export class GrandStrategyExecution implements Execution {
    */
   private ablated?: Set<string>;
 
-  ablate(
-    part: "civgold" | "trade" | "artillery" | "research" | "researchlead",
-  ): void {
+  ablate(part: "civgold" | "trade" | "artillery" | "research"): void {
     (this.ablated ??= new Set()).add(part);
   }
 
@@ -404,13 +401,7 @@ export class GrandStrategyExecution implements Execution {
         }
       }
       if (this.on("research")) {
-        advanceResearch(
-          s,
-          knownBy,
-          this.on("researchlead")
-            ? researchSpeedPermille(p.numTilesOwned(), mg.numLandTiles())
-            : 1000,
-        );
+        advanceResearch(s, knownBy);
       } else {
         s.research = [];
         s.researched = [];
@@ -492,9 +483,6 @@ export class GrandStrategyExecution implements Execution {
         artilleryShare: s.artilleryShare,
         artillerySupport: equippedPermille(s.artillery, p.troops()),
         era: eraOf(s.researched),
-        researchSpeed: this.on("researchlead")
-          ? researchSpeedPermille(p.numTilesOwned(), mg.numLandTiles())
-          : 1000,
         researched: [...s.researched],
         research: s.research.map((r) => {
           const t = techById(r.id);
