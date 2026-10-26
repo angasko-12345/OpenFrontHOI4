@@ -368,20 +368,22 @@ export function addResearchEffects(
 }
 
 const AI_RESEARCH_ORDER: Record<AiPersonality, readonly TechID[]> = {
+  // Combat technologies early: production alone does not hold land
+  // (45-seed check, 2026-10-26: production-first left industrialists -12 pts).
   industrialist: [
-    "basic_machine_tools",
-    "improved_workshops",
-    "firepower_doctrine",
-    "propaganda_bureau",
-    "assembly_lines",
-    "civil_administration",
     "infantry_weapons",
-    "field_fortifications",
-    "concentrated_fire",
-    "automation",
-    "motorization",
+    "basic_machine_tools",
+    "firepower_doctrine",
+    "improved_workshops",
     "improved_artillery",
+    "assembly_lines",
+    "concentrated_fire",
+    "field_fortifications",
+    "motorization",
+    "propaganda_bureau",
+    "automation",
     "mechanized_warfare",
+    "civil_administration",
     "total_defense",
   ],
   militarist: [
