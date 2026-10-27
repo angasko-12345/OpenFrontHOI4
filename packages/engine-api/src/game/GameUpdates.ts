@@ -219,6 +219,9 @@ export interface GrandStrategyUpdate {
   truces: { target: string; seconds: number; lock: number }[];
   /** Most land held, tiles (capitulation below half of it while at war). */
   peakTiles: number;
+  /** M7 stage B: ideology id and seconds before it may change again. */
+  ideology: string;
+  ideologyCooldown: number;
 }
 
 export interface BonusEventUpdate {

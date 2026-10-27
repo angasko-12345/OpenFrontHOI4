@@ -273,14 +273,38 @@ export const TECH_IDS = [
 ] as const;
 export type TechID = (typeof TECH_IDS)[number];
 
-/** Everything the `gs_action` intent can carry. */
+/** Grand Strategy ideologies (M7 stage B; definitions in GrandStrategyIdeology). */
+export const IDEOLOGY_IDS = [
+  "nonaligned",
+  "assembly",
+  "directorate",
+  "commune",
+] as const;
+export type IdeologyID = (typeof IDEOLOGY_IDS)[number];
+
+/** gs_action ids that adopt an ideology: "ideology_" + IdeologyID. */
+export const IDEOLOGY_ACTION_IDS = [
+  "ideology_nonaligned",
+  "ideology_assembly",
+  "ideology_directorate",
+  "ideology_commune",
+] as const;
+export type IdeologyActionID = (typeof IDEOLOGY_ACTION_IDS)[number];
+
+/** Everything the `gs_action` intent can carry (append-only). */
 export const GS_ACTION_IDS = [
   ...DECISION_IDS,
   ...ADVISOR_IDS,
   ...PRODUCTION_LINE_IDS,
   ...TECH_IDS,
+  ...IDEOLOGY_ACTION_IDS,
 ] as const;
-export type GsActionID = DecisionID | AdvisorID | ProductionLineID | TechID;
+export type GsActionID =
+  | DecisionID
+  | AdvisorID
+  | ProductionLineID
+  | TechID
+  | IdeologyActionID;
 
 export enum UnitType {
   TransportShip = "Transport",

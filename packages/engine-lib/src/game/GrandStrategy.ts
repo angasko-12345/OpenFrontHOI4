@@ -22,10 +22,22 @@ import {
   DecisionID,
   ECONOMY_LAW_IDS,
   FOCUS_IDS,
+  IdeologyActionID,
   FocusID,
   LAW_IDS,
   LawID,
 } from "@openfront/engine-api/game/GameTypes";
+import {
+  adoptIdeology,
+  AI_IDEOLOGY,
+  canAdoptIdeology,
+  DEFAULT_IDEOLOGY,
+  ideologyAction,
+  ideologyDef,
+  ideologyOfAction,
+  lawWarSupportFor,
+  tickIdeology,
+} from "./GrandStrategyIdeology";
 import {
   WEARY_ATTACK_LOSS,
   WEARY_POLITICAL_POWER,
@@ -476,6 +488,12 @@ export interface NationGsState {
    * GrandStrategyPeace). Absent = 0 (states built before M7).
    */
   weariness?: number;
+  /**
+   * M7 stage B: ideology id and seconds before it may change again.
+   * Absent = non-aligned / 0 (states built before M7 stage B).
+   */
+  ideology?: string;
+  ideologyCooldown?: number;
 }
 
 export interface TimedEntry {
@@ -544,6 +562,8 @@ export function newNationState(startEquipment: number): NationGsState {
     researched: [],
     research: [],
     weariness: 0,
+    ideology: DEFAULT_IDEOLOGY,
+    ideologyCooldown: 0,
   };
 }
 
@@ -573,6 +593,7 @@ export function modifiersOf(state: NationGsState): GsModifiers {
   }
   addResearchEffects(m, state.researched ?? []);
   addWearinessEffects(m, state.weariness);
+  addEffects(m, ideologyDef(state.ideology).effects);
   return m;
 }
 
@@ -638,7 +659,9 @@ export function canSetLaw(state: NationGsState, id: string): LawCheck {
   const current =
     l.category === "conscription" ? state.conscriptionLaw : state.economyLaw;
   if (current === id) return "active";
-  if (state.warSupport < l.minWarSupport) return "low_war_support";
+  if (state.warSupport < l.minWarSupport + lawWarSupportFor(state.ideology)) {
+    return "low_war_support";
+  }
   if (state.politicalPower < LAW_CHANGE_COST) return "no_political_power";
   return "ok";
 }
@@ -690,6 +713,17 @@ export function takeAction(state: NationGsState, id: string): ActionCheck {
     state.researched ??= [];
     state.research ??= [];
     return startResearch(state, id) === "ok" ? "ok" : "unavailable";
+  }
+  const ideology = ideologyOfAction(id);
+  if (ideology !== null) {
+    const r = adoptIdeology(state, ideology);
+    return r === "ok"
+      ? "ok"
+      : r === "no_political_power"
+        ? "no_political_power"
+        : r === "cooldown"
+          ? "cooldown"
+          : "unavailable";
   }
   const check = canTakeAction(state, id);
   if (check !== "ok") return check;
@@ -791,6 +825,7 @@ export function advanceSecond(
 
   state.activeDecisions = tickTimers(state.activeDecisions);
   state.decisionCooldowns = tickTimers(state.decisionCooldowns);
+  tickIdeology(state);
 
   const mods = modifiersOf(state);
 
@@ -998,8 +1033,8 @@ const AI_LAW_CEILING: Record<AiPersonality, readonly LawID[]> = {
 export interface AiChoice {
   focus: FocusID | null;
   law: LawID | null;
-  /** Decision or advisor to buy with spare political power. */
-  action: DecisionID | AdvisorID | null;
+  /** Decision, advisor or (M7 stage B) ideology to buy with spare PP. */
+  action: DecisionID | AdvisorID | IdeologyActionID | null;
 }
 
 const AI_ADVISORS: Record<AiPersonality, readonly AdvisorID[]> = {
@@ -1024,6 +1059,7 @@ export const AI_PP_RESERVE = LAW_CHANGE_COST + 100_000;
 export function aiChoose(
   state: NationGsState,
   personality: AiPersonality,
+  ideologies = true,
 ): AiChoice {
   let focus: FocusID | null = null;
   if (state.focus === null) {
@@ -1049,8 +1085,17 @@ export function aiChoose(
       break;
     }
   }
-  let action: DecisionID | AdvisorID | null = null;
-  if (law === null && state.politicalPower >= AI_PP_RESERVE) {
+  let action: DecisionID | AdvisorID | IdeologyActionID | null = null;
+  // M7 stage B: adopt the personality's ideology once, out of spare PP.
+  const wanted = AI_IDEOLOGY[personality];
+  if (
+    law === null &&
+    ideologies &&
+    state.politicalPower >= AI_PP_RESERVE &&
+    canAdoptIdeology(state, wanted) === "ok"
+  ) {
+    action = ideologyAction(wanted);
+  } else if (law === null && state.politicalPower >= AI_PP_RESERVE) {
     action =
       AI_ADVISORS[personality].find(
         (id) => canTakeAction(state, id) === "ok",

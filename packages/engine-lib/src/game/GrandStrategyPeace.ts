@@ -210,6 +210,8 @@ export interface WearinessInput {
   /** Wars older than LONG_WAR_SECONDS. */
   longWars: number;
   atWar: boolean;
+  /** Gain multiplier (ideology, stage B), per-mille; absent = 1000. */
+  gainPermille?: number;
 }
 
 /** Weariness after one second (thousandths of per-mille). */
@@ -228,7 +230,11 @@ export function advanceWeariness(current: number, i: WearinessInput): number {
     1000 +
     Math.floor((share * SIZE_WEARINESS) / 1000) +
     Math.floor((occupied * OCCUPIED_WEARINESS) / 1000);
-  const gain = Math.floor(((lossGain + landGain + warGain) * scale) / 1000);
+  const gain = Math.floor(
+    (Math.floor(((lossGain + landGain + warGain) * scale) / 1000) *
+      Math.max(0, i.gainPermille ?? 1000)) /
+      1000,
+  );
   const recovery = i.atWar ? WAR_RECOVERY : PEACE_RECOVERY;
   return clamp(
     Math.floor(current) + gain - (gain > 0 ? 0 : recovery),
@@ -396,6 +402,8 @@ export interface AiBreakInput {
   borders: boolean;
   /** Can pay BREAK_PP_COST. */
   canPay: boolean;
+  /** Per-mille added to the strength needed (ideology); floor 1000. */
+  strengthBias?: number;
 }
 
 /**
@@ -410,7 +418,10 @@ export function aiBreaksTruce(
   if (!i.borders || !i.canPay) return false;
   if (i.wars > AI_BREAK_MAX_WARS[personality]) return false;
   if (i.weariness > AI_BREAK_MAX_WEARINESS[personality]) return false;
-  return i.strengthPermille >= AI_BREAK_STRENGTH[personality];
+  return (
+    i.strengthPermille >=
+    Math.max(1000, AI_BREAK_STRENGTH[personality] + (i.strengthBias ?? 0))
+  );
 }
 
 export function hasOffered(s: NationPeaceState, target: number): boolean {
@@ -440,15 +451,20 @@ export function losingTo(e: EnemyEntry | undefined): boolean {
   return e !== undefined && e.lost > e.won;
 }
 
-/** Whether an AI accepts a peace offer from an enemy. */
+/**
+ * Whether an AI accepts a peace offer from an enemy. `bias` (per-mille,
+ * ideology) moves the weariness threshold.
+ */
 export function aiAcceptsPeace(
   personality: AiPersonality,
   weariness: number,
   e: EnemyEntry | undefined,
+  bias = 0,
 ): boolean {
   return (
     losingTo(e) ||
-    wearinessPermille(weariness) >= AI_ACCEPT_WEARINESS[personality]
+    wearinessPermille(weariness) >=
+      Math.max(0, AI_ACCEPT_WEARINESS[personality] + bias)
   );
 }
 
@@ -462,9 +478,12 @@ export function aiPeaceTarget(
   personality: AiPersonality,
   weariness: number,
   skip: number | null,
+  bias = 0,
 ): number | null {
   if (s.offers.length > 0) return null;
-  const weary = wearinessPermille(weariness) >= AI_OFFER_WEARINESS[personality];
+  const weary =
+    wearinessPermille(weariness) >=
+    Math.max(0, AI_OFFER_WEARINESS[personality] + bias);
   let best: EnemyEntry | null = null;
   for (const e of s.enemies) {
     if (hasTruce(s, e.target)) continue;

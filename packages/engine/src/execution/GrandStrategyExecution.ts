@@ -50,6 +50,14 @@ import {
   steelProductionPermille,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
+  aiBreakBias,
+  aiPeaceBias,
+  ideologyDef,
+  ideologyOfAction,
+  justifyCostFor,
+  wearinessGainFor,
+} from "@openfront/engine-lib/game/GrandStrategyIdeology";
+import {
   addOffer,
   addTruce,
   advancePeaceTimers,
@@ -171,7 +179,8 @@ export class GrandStrategyExecution implements Execution {
    * factories, "trade" = automatic imports, "artillery" = production lines,
    * "research" = M6 research, "atomic" = the M6 stage C nuclear gate
    * (nukes buildable without the atomic project; AI skips the project),
-   * "weariness" = M7 stage A (war weariness, capitulation, peace, truces).
+   * "weariness" = M7 stage A (war weariness, capitulation, peace, truces),
+   * "ideology" = M7 stage B (no ideology changes; everyone non-aligned).
    */
   private ablated?: Set<string>;
 
@@ -182,7 +191,8 @@ export class GrandStrategyExecution implements Execution {
       | "artillery"
       | "research"
       | "atomic"
-      | "weariness",
+      | "weariness"
+      | "ideology",
   ): void {
     (this.ablated ??= new Set()).add(part);
   }
@@ -458,15 +468,19 @@ export class GrandStrategyExecution implements Execution {
     const s = this.stateOf(player);
     const w = this.warOf(player);
     if (s === null || w === null) return "invalid_target";
+    const cost = this.on("ideology")
+      ? justifyCostFor(JUSTIFY_COST, s.ideology)
+      : JUSTIFY_COST;
     const check = canJustify(
       w,
       player.smallID(),
       target.smallID(),
       s.politicalPower,
       this.validTarget(player, target),
+      cost,
     );
     if (check === "ok") {
-      s.politicalPower -= JUSTIFY_COST;
+      s.politicalPower -= cost;
       startJustify(w, target.smallID());
     }
     return check;
@@ -536,9 +550,22 @@ export class GrandStrategyExecution implements Execution {
   takeAction(player: Player, id: GsActionID): ActionCheck {
     const s = this.stateOf(player);
     if (s === null) return "unknown";
+    const ideology = ideologyOfAction(id);
+    if (ideology !== null && !this.on("ideology")) return "unavailable";
     const check = takeAction(s, id);
     if (check === "ok" && id === ATOMIC_PROJECT) {
       this.announceAtomic(player, "events_display.atomic_project_started");
+    }
+    if (check === "ok" && ideology !== null) {
+      this.mg?.displayMessage(
+        "events_display.gs_ideology_changed",
+        MessageType.GS_DIPLOMACY,
+        null,
+        undefined,
+        { name: player.displayName(), ideology: ideologyDef(ideology).name },
+        undefined,
+        player.id(),
+      );
     }
     return check;
   }
@@ -683,10 +710,14 @@ export class GrandStrategyExecution implements Execution {
       const w = this.warOf(p)!;
       if (p.type() === PlayerType.Nation) {
         if (this.warLayer) this.aiJustify(p, s, w);
-        const choice = aiChoose(s, aiPersonalityFor(p.smallID()));
+        const choice = aiChoose(
+          s,
+          aiPersonalityFor(p.smallID()),
+          this.on("ideology"),
+        );
         if (choice.focus !== null) startFocus(s, choice.focus);
         if (choice.law !== null) setLaw(s, choice.law);
-        if (choice.action !== null) takeAction(s, choice.action);
+        if (choice.action !== null) this.takeAction(p, choice.action);
         if (this.on("research")) {
           // Fill free slots; bounded so a rule bug can never spin forever.
           for (let i = 0; i < RESEARCH_SLOTS; i++) {
@@ -819,6 +850,8 @@ export class GrandStrategyExecution implements Execution {
               : null,
         atomicProjects: [],
         atomicPowers: [],
+        ideology: ideologyDef(s.ideology).id,
+        ideologyCooldown: s.ideologyCooldown ?? 0,
         ...this.peaceUpdate(mg, p),
       });
     }
@@ -869,6 +902,9 @@ export class GrandStrategyExecution implements Execution {
         occupied: this.wars.get(p.smallID())?.occupied ?? 0,
         longWars: longWars(ps),
         atWar: ps.enemies.length > 0,
+        gainPermille: this.on("ideology")
+          ? wearinessGainFor(s.ideology)
+          : undefined,
       });
       ps.lossesThisSecond = 0;
       ps.tilesLostThisSecond = 0;
@@ -887,6 +923,7 @@ export class GrandStrategyExecution implements Execution {
       ps.peakTiles = p.numTilesOwned();
     }
     const coalition = this.warLayer ? this.coalitionLeader : null;
+    const ideologies = this.on("ideology");
     for (const p of live) {
       if (p.type() !== PlayerType.Nation) continue;
       const s = this.stateOf(p)!;
@@ -900,7 +937,17 @@ export class GrandStrategyExecution implements Execution {
         const accept =
           o.smallID() === coalition
             ? losingTo(e)
-            : aiAcceptsPeace(personality, s.weariness ?? 0, e);
+            : aiAcceptsPeace(
+                personality,
+                s.weariness ?? 0,
+                e,
+                ideologies
+                  ? aiPeaceBias(
+                      s.ideology,
+                      this.states.get(o.smallID())?.ideology,
+                    )
+                  : 0,
+              );
         if (accept) this.offerPeace(p, o);
       }
       const target = aiPeaceTarget(
@@ -908,6 +955,7 @@ export class GrandStrategyExecution implements Execution {
         personality,
         s.weariness ?? 0,
         coalition,
+        ideologies ? aiPeaceBias(s.ideology) : 0,
       );
       if (target !== null) {
         const t = mg.playerBySmallID(target);
@@ -939,6 +987,9 @@ export class GrandStrategyExecution implements Execution {
         wars: ps.enemies.length,
         borders: true,
         canPay: s.politicalPower >= BREAK_PP_COST,
+        strengthBias: this.on("ideology")
+          ? aiBreakBias(s.ideology, this.states.get(t.target)?.ideology)
+          : 0,
       };
       // The border walk last: it is the only costly input.
       if (aiBreaksTruce(personality, input) && p.sharesBorderWith(other)) {
@@ -1174,6 +1225,8 @@ export class GrandStrategyExecution implements Execution {
         researched: [...s.researched],
         research: s.research.map((r) => ({ ...r })),
         weariness: s.weariness ?? 0,
+        ideology: ideologyDef(s.ideology).id,
+        ideologyCooldown: s.ideologyCooldown ?? 0,
         ...warSnapshot(this.wars.get(id)),
         ...peaceSnapshot(this.peace.get(id)),
       })),
@@ -1212,6 +1265,8 @@ export class GrandStrategyExecution implements Execution {
           researched: [...n.researched],
           research: n.research.map((r) => ({ ...r })),
           weariness: n.weariness,
+          ideology: n.ideology,
+          ideologyCooldown: n.ideologyCooldown,
         },
       ]),
     );
@@ -1324,6 +1379,8 @@ const GrandStrategyStateSchema = z.object({
       justifying: WarGoalSchema.nullable(),
       warGoals: z.array(WarGoalSchema),
       weariness: zInt(),
+      ideology: z.string(),
+      ideologyCooldown: zInt(),
       peakTiles: zInt(),
       tilesLostThisSecond: zInt(),
       lossesThisSecond: zInt(),
@@ -1346,9 +1403,18 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 10,
+  version: 11,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v11 added ideologies (M7 stage B): everyone starts non-aligned.
+    10: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        ideology: "nonaligned",
+        ideologyCooldown: 0,
+      })),
+    }),
     // v10 (M7 stage A.2) gave truces a minimum lock; older truces could
     // never be broken, so they stay locked until they expire.
     9: (d: {

@@ -194,6 +194,7 @@ export function canJustify(
   target: number,
   politicalPower: number,
   targetValid: boolean,
+  cost: number = JUSTIFY_COST,
 ): JustifyCheck {
   if (target === selfId) return "self";
   if (!targetValid) return "invalid_target";
@@ -201,7 +202,7 @@ export function canJustify(
   if (hasWarGoal(s, target)) return "already_justified";
   const offensive = s.warGoals.filter((g) => g.defensive !== true).length;
   if (offensive + 1 > MAX_WAR_GOALS) return "too_many_goals";
-  if (politicalPower < JUSTIFY_COST) return "not_enough_pp";
+  if (politicalPower < cost) return "not_enough_pp";
   return "ok";
 }
 

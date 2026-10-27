@@ -900,6 +900,7 @@
     "duration_seconds_plural": "{seconds} seconds",
     "focus": "Focus",
     "gs_capitulated": "{name} has capitulated to {other}: truce, unbreakable for {minutes} min; {other} keeps the land it took",
+    "gs_ideology_changed": "{name} has adopted a new ideology: {ideology}",
     "gs_peace_offered": "{name} offers peace (open the Grand Strategy War tab to accept)",
     "gs_peace_signed": "{name} and {other} have signed a peace: truce, unbreakable for {minutes} min",
     "gs_truce_broken": "{name} has broken its truce with {other}",
