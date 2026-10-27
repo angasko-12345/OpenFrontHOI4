@@ -45,10 +45,11 @@ test.skipIf(!process.env.PT_RUN)(
     // supply, war goals, coalition) off, to measure M4 on its own.
     const noWar = process.env.PT_GS === "nowar";
     // PT_GS=nocivgold / notrade / noartillery / noresearch / noatomic /
-    // noweariness: one M5/M6/M7 part off (noatomic = nukes ungated, no
-    // atomic project; noweariness = no war weariness, capitulation, peace).
+    // noweariness / noideology: one M5/M6/M7 part off (noatomic = nukes
+    // ungated, no atomic project; noweariness = no war weariness,
+    // capitulation, peace; noideology = everyone stays non-aligned).
     const ablate =
-      /^no(civgold|trade|artillery|research|atomic|weariness)$/.exec(
+      /^no(civgold|trade|artillery|research|atomic|weariness|ideology)$/.exec(
         process.env.PT_GS ?? "",
       )?.[1] as
         | "civgold"
@@ -57,6 +58,7 @@ test.skipIf(!process.env.PT_RUN)(
         | "research"
         | "atomic"
         | "weariness"
+        | "ideology"
         | undefined;
     // M7: count diplomacy events (peace, capitulation, truce broken) by
     // wrapping displayMessage; harness only, the game never reads it.
@@ -128,6 +130,8 @@ test.skipIf(!process.env.PT_RUN)(
           wear: s ? Math.floor((s.weariness ?? 0) / 1000) : null,
           wars: alive ? (gs?.peaceOf(p)?.enemies.length ?? null) : null,
           truces: alive ? (gs?.peaceOf(p)?.truces.length ?? null) : null,
+          // M7 stage B: ideology id.
+          ideo: s?.ideology ?? null,
         };
       });
       out.push({
