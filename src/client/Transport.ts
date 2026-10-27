@@ -214,6 +214,17 @@ export class SendFactionIntentEvent implements GameEvent {
   ) {}
 }
 
+/**
+ * Grand Strategy (M7 stage D): puppet a beaten nation ("demand"), release
+ * our puppet ("release"), or declare our independence ("independence").
+ */
+export class SendPuppetIntentEvent implements GameEvent {
+  constructor(
+    public readonly mode: "demand" | "release" | "independence",
+    public readonly targetID: PlayerID,
+  ) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -386,6 +397,9 @@ export class Transport {
     );
     this.subscribe(SendFactionIntentEvent, (e) =>
       this.sendIntent({ type: "faction", mode: e.mode, targetID: e.targetID }),
+    );
+    this.subscribe(SendPuppetIntentEvent, (e) =>
+      this.sendIntent({ type: "puppet", mode: e.mode, targetID: e.targetID }),
     );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),

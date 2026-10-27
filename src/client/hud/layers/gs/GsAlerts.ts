@@ -30,7 +30,8 @@ export type GsAlertKind =
   | "wargoal"
   | "coalition"
   | "revanche"
-  | "faction";
+  | "faction"
+  | "puppet";
 
 export type GsAlertTone = "danger" | "good" | "warn" | "info";
 
@@ -65,6 +66,7 @@ export const ALERT_MS: Record<GsAlertKind, number> = {
   coalition: 15_000,
   revanche: 12_000,
   faction: 10_000,
+  puppet: 12_000,
 };
 
 export const MAX_ALERTS = 4;
@@ -215,6 +217,75 @@ export function diffGsAlerts(
       }
     }
   }
+  // M7 stage D: puppet bonds (fields absent when puppets are off).
+  if (prev.puppets !== undefined && next.puppets !== undefined) {
+    const po = prev.overlord ?? null;
+    const no = next.overlord ?? null;
+    if (po === null && no !== null) {
+      out.push({
+        kind: "puppet",
+        text: `We are now a puppet of ${nameOf(no)}`,
+        tab: "war",
+        tone: "danger",
+        target: no,
+      });
+    } else if (po !== null && no === null) {
+      out.push({
+        kind: "puppet",
+        text: `We are free of ${nameOf(po)}`,
+        tab: "war",
+        tone: "good",
+        target: po,
+      });
+    } else if (
+      no !== null &&
+      prev.independence !== "ok" &&
+      next.independence === "ok"
+    ) {
+      out.push({
+        kind: "puppet",
+        text: `We may break free of ${nameOf(no)}`,
+        tab: "war",
+        tone: "good",
+        target: no,
+      });
+    }
+    const had = prev.puppets.map((x) => x.id);
+    const have = next.puppets.map((x) => x.id);
+    for (const id of added(had, have)) {
+      out.push({
+        kind: "puppet",
+        text: `${nameOf(id)} is now our puppet`,
+        tab: "war",
+        tone: "good",
+        target: id,
+      });
+    }
+    for (const id of added(have, had)) {
+      out.push({
+        kind: "puppet",
+        text: `${nameOf(id)} is no longer our puppet`,
+        tab: "war",
+        tone: "warn",
+        target: id,
+      });
+    }
+    const opened = added(
+      (prev.puppetWindows ?? []).map((w) => w.target),
+      (next.puppetWindows ?? [])
+        .filter((w) => w.check === "ok")
+        .map((w) => w.target),
+    );
+    for (const id of opened) {
+      out.push({
+        kind: "puppet",
+        text: `${nameOf(id)} is beaten: make it our puppet?`,
+        tab: "war",
+        tone: "info",
+        target: id,
+      });
+    }
+  }
   if (
     prev.ideology !== undefined &&
     next.ideology !== undefined &&
@@ -342,6 +413,7 @@ const KIND_ICON: Record<GsAlertKind, GsIconName> = {
   coalition: "war",
   revanche: "war",
   faction: "peace",
+  puppet: "peace",
 };
 
 export interface GsAlertHandlers {

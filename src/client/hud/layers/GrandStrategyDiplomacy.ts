@@ -19,6 +19,18 @@ import {
   TRUCE_MIN_LOCK,
 } from "@openfront/engine-lib/game/GrandStrategyPeace";
 import {
+  AUTONOMY_MAX,
+  INDEPENDENCE_LOCK,
+  INDEPENDENCE_PP,
+  INDEPENDENCE_WEARY_AT,
+  PUPPET_MAX_BLOC_SHARE,
+  PUPPET_MAX_SIZE,
+  PUPPET_PP,
+  PUPPET_TRIBUTE,
+  PUPPET_WINDOW,
+  TRIBUTE_FADE_SHARE,
+} from "@openfront/engine-lib/game/GrandStrategyPuppet";
+import {
   RECOVERY_MANPOWER,
   RECOVERY_POLITICAL_POWER,
   REVANCHE_ATTACK_LOSS,
@@ -386,5 +398,174 @@ export function factionRulesNote(): string {
     `of nations; a leader over 25% of the world cannot take members, no join ` +
     `may push a faction past 40%, no calls to arms above 35%, and a faction ` +
     `over 50% breaks up.`
+  );
+}
+
+/** Short reason a puppet action is unavailable. */
+const PUPPET_REASON: Record<string, string> = {
+  disabled: "Unavailable",
+  invalid_target: "Gone",
+  not_puppetable: "Too late",
+  is_puppet: "We are a puppet",
+  already_puppet: "Already a puppet",
+  too_big: "Too big",
+  bloc_too_big: "Bloc too big",
+  too_many: "Puppet cap",
+  no_political_power: "Needs PP",
+  too_early: "Not yet",
+  not_puppet: "",
+};
+
+/**
+ * M7 stage D, War tab: our overlord (autonomy bar, tribute, Independence
+ * button), our puppets (autonomy, tribute, Release), and beaten nations we
+ * may still puppet (Puppet button with the seconds left).
+ */
+export function renderPuppets(
+  d: GrandStrategyUpdate,
+  name: (id: string) => string,
+  on: {
+    demand: (id: string) => void;
+    release: (id: string) => void;
+    independence: () => void;
+  },
+) {
+  if (d.puppets === undefined) return nothing;
+  const overlord = d.overlord ?? null;
+  const windows = d.puppetWindows ?? [];
+  if (overlord === null && d.puppets.length === 0 && windows.length === 0) {
+    return nothing;
+  }
+  const btn = (enabled: boolean, tone = "bg-gray-700 hover:bg-gray-600") =>
+    `min-h-10 shrink-0 rounded px-3 sm:min-h-0 sm:px-2 ${
+      enabled ? tone : "bg-gray-900/60 text-gray-500"
+    }`;
+  const bar = (autonomy: number, testid: string) => {
+    const pct = Math.floor(
+      (Math.min(autonomy, AUTONOMY_MAX) * 100) / AUTONOMY_MAX,
+    );
+    return html`<div
+      class="h-1.5 w-full overflow-hidden rounded bg-gray-800"
+      role="progressbar"
+      aria-valuenow=${pct}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      data-testid=${testid}
+    >
+      <div class="h-full bg-sky-400" style="width:${pct}%"></div>
+    </div>`;
+  };
+  const free = d.independence === "ok";
+  return html`<div class="space-y-1" data-testid="gs-puppets">
+    ${
+      overlord !== null
+        ? html`<div
+            class="space-y-1 rounded bg-sky-950/60 px-2 py-1"
+            data-testid="gs-overlord"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate"
+                >Puppet of <b>${name(overlord)}</b>
+                <span class="opacity-70"
+                  >· tribute ${Math.floor((d.tribute ?? 0) / 10)}%</span
+                ></span
+              >
+              <button
+                class=${btn(free, "bg-sky-700 hover:bg-sky-600")}
+                ?disabled=${!free}
+                title="Break free for ${INDEPENDENCE_PP / 1000} PP"
+                data-testid="gs-independence"
+                @click=${() => on.independence()}
+              >
+                ${
+                  free
+                    ? `Independence (${INDEPENDENCE_PP / 1000} PP)`
+                    : (PUPPET_REASON[d.independence ?? "too_early"] ??
+                      "Not yet")
+                }
+              </button>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="shrink-0 opacity-70"
+                >Autonomy ${Math.floor((d.autonomy ?? 0) / 10)}%</span
+              >
+              ${bar(d.autonomy ?? 0, "gs-autonomy-bar")}
+            </div>
+          </div>`
+        : nothing
+    }
+    ${
+      d.puppets.length > 0
+        ? html`<div class="font-semibold">
+            Puppets ${d.puppets.length}/${d.puppetCap ?? d.puppets.length}
+          </div>`
+        : nothing
+    }
+    ${d.puppets.map(
+      (p) =>
+        html`<div class="space-y-0.5" data-testid="gs-puppet-row">
+          <div class="flex items-center justify-between gap-2">
+            <span class="min-w-0 truncate"
+              >${name(p.id)}
+              <span class="opacity-70"
+                >· tribute ${Math.floor(p.tribute / 10)}% · autonomy
+                ${Math.floor(p.autonomy / 10)}%</span
+              ></span
+            >
+            <button
+              class=${btn(true)}
+              data-testid="gs-puppet-release"
+              @click=${() => on.release(p.id)}
+            >
+              Release
+            </button>
+          </div>
+          ${bar(p.autonomy, "gs-puppet-autonomy")}
+        </div>`,
+    )}
+    ${windows.map(
+      (w) =>
+        html`<div
+          class="flex items-center justify-between gap-2"
+          data-testid="gs-puppet-window"
+        >
+          <span class="min-w-0 truncate"
+            >${name(w.target)} is beaten
+            <span class="opacity-70">${w.seconds}s</span></span
+          >
+          ${
+            w.check === "ok"
+              ? html`<button
+                  class=${btn(true, "bg-sky-700 hover:bg-sky-600")}
+                  data-testid="gs-puppet-demand"
+                  @click=${() => on.demand(w.target)}
+                >
+                  Puppet (${PUPPET_PP / 1000} PP)
+                </button>`
+              : html`<span class="shrink-0 text-[11px] opacity-60"
+                  >${PUPPET_REASON[w.check] ?? w.check}</span
+                >`
+          }
+        </div>`,
+    )}
+  </div>`;
+}
+
+/** Rules note for puppets (behind the War tab's (i)). */
+export function puppetRulesNote(): string {
+  return (
+    `Puppets: for ${PUPPET_WINDOW}s after a won peace or capitulation you ` +
+    `may make the loser your puppet for ${PUPPET_PP / 1000} PP instead of ` +
+    `leaving it a truce (it may hold at most ${PUPPET_MAX_SIZE / 10}% of your ` +
+    `land; your bloc may not pass ${PUPPET_MAX_BLOC_SHARE / 10}% of the ` +
+    `world). A puppet keeps its land, never fights its overlord, is in no ` +
+    `faction, joins the overlord's wars and pays up to ` +
+    `${PUPPET_TRIBUTE / 10}% of its PP, gold and manpower (less as the ` +
+    `overlord's bloc nears ${TRIBUTE_FADE_SHARE / 10}% of the world). ` +
+    `Autonomy builds over time, faster under a weary or dominant overlord; ` +
+    `at full autonomy, an overlord over ${INDEPENDENCE_WEARY_AT / 10}% ` +
+    `weariness, or with fewer troops than the puppet, the puppet may break ` +
+    `free for ${INDEPENDENCE_PP / 1000} PP (truce ${INDEPENDENCE_LOCK / 60} ` +
+    `min).`
   );
 }

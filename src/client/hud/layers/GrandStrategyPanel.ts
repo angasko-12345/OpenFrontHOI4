@@ -53,6 +53,7 @@ import {
   SendJustifyWarIntentEvent,
   SendFactionIntentEvent,
   SendPeaceIntentEvent,
+  SendPuppetIntentEvent,
   SendSetFocusIntentEvent,
   SendSetLawIntentEvent,
 } from "../../Transport";
@@ -63,6 +64,8 @@ import {
   renderIdeologyRow,
   renderInfoHint,
   factionRulesNote,
+  puppetRulesNote,
+  renderPuppets,
   renderTruces,
   revancheRulesNote,
   truceRulesNote,
@@ -338,6 +341,12 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const me = this.game.myPlayer()?.id();
     if (me === undefined) return;
     this.eventBus.emit(new SendFactionIntentEvent(mode, leader ?? me));
+  }
+
+  private puppet(mode: "demand" | "release" | "independence", id?: PlayerID) {
+    const me = this.game.myPlayer()?.id();
+    if (me === undefined) return;
+    this.eventBus.emit(new SendPuppetIntentEvent(mode, id ?? me));
   }
 
   private name(id: string): string {
@@ -1232,7 +1241,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         and cuts political power and war support. Below
         ${CAPITULATE_PERMILLE / 10}% of your peak land (${d.peakTiles ?? 0}
         tiles) while at war you capitulate. ${truceRulesNote()}
-        ${revancheRulesNote()} ${factionRulesNote()}`,
+        ${revancheRulesNote()} ${factionRulesNote()} ${puppetRulesNote()}`,
       )}
     </div>`;
   }
@@ -1264,6 +1273,11 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           : nothing
       }
       ${this.renderPeace(d)}
+      ${renderPuppets(d, (id) => this.name(id), {
+        demand: (id) => this.puppet("demand", id),
+        release: (id) => this.puppet("release", id),
+        independence: () => this.puppet("independence"),
+      })}
       ${renderFaction(d, (id) => this.name(id), {
         found: () => this.faction("found"),
         join: (id) => this.faction("join", id),
