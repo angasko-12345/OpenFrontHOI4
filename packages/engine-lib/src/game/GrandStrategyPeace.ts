@@ -17,7 +17,15 @@
  *   (and nuking) only, not an alliance. Stage A.2: its minimum lock is
  *   dynamic (truceLockSeconds); after it the truce still holds but either
  *   side may break it at a price, until it expires TRUCE_BREAKABLE_SECONDS
- *   later.
+ *   later. So a truce lasts lock + TRUCE_BREAKABLE_SECONDS in total and is
+ *   breakable during its final TRUCE_BREAKABLE_SECONDS (2 min).
+ * - M7E: breaking a truce marks the breaker a traitor through upstream's
+ *   alliance-betrayal mechanic (Player.markTraitor, Config.traitorDuration
+ *   = 30 s: weaker defence, AI targets and shuns traitors), unless the
+ *   victim is already a traitor (same rule as breaking an alliance). With
+ *   that penalty in place the old weariness cost was dropped and the PP
+ *   cost halved; the war-support cost and the victim's war goal stay.
+ *   A revanche break (GrandStrategyRevanche) is justified: no traitor mark.
  */
 import type { AiPersonality } from "./GrandStrategy";
 
@@ -69,10 +77,13 @@ export const TRUCE_CALM_SECONDS = 60;
 export const TRUCE_CALM_WEARINESS = 100;
 /** After the lock, a truce holds (breakable) this long, then expires. */
 export const TRUCE_BREAKABLE_SECONDS = 120;
-/** Breaking a truce: political power (thousandths), war support, weariness. */
-export const BREAK_PP_COST = 100_000;
+/**
+ * Breaking a truce: political power (thousandths) and war support. M7E:
+ * 100 -> 50 PP and no weariness cost (was +10%), since the breaker is now
+ * also a traitor for 30 s (upstream traitor mechanic).
+ */
+export const BREAK_PP_COST = 50_000;
 export const BREAK_WAR_SUPPORT = -100;
-export const BREAK_WEARINESS = 100_000;
 /** Seconds a peace offer stays open. */
 export const OFFER_SECONDS = 60;
 
@@ -418,6 +429,8 @@ export interface AiBreakInput {
   canPay: boolean;
   /** Per-mille added to the strength needed (ideology); floor 1000. */
   strengthBias?: number;
+  /** Already a traitor (upstream flag): never breaks another truce then. */
+  traitor?: boolean;
 }
 
 /**
@@ -429,7 +442,7 @@ export function aiBreaksTruce(
   personality: AiPersonality,
   i: AiBreakInput,
 ): boolean {
-  if (!i.borders || !i.canPay) return false;
+  if (!i.borders || !i.canPay || i.traitor === true) return false;
   if (i.wars > AI_BREAK_MAX_WARS[personality]) return false;
   if (i.weariness > AI_BREAK_MAX_WEARINESS[personality]) return false;
   return (

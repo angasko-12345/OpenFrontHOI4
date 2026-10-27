@@ -15,7 +15,6 @@ import {
   AI_BREAK_STRENGTH,
   BREAK_PP_COST,
   BREAK_WAR_SUPPORT,
-  BREAK_WEARINESS,
   canBreakTruce,
   hasTruce,
   newPeaceState,
@@ -147,6 +146,9 @@ describe("truce lock rules (M7 stage A.2)", () => {
       expect(aiBreaksTruce(p, { ...ok, canPay: false })).toBe(false);
       expect(aiBreaksTruce(p, { ...ok, weariness: 500 })).toBe(false);
       expect(aiBreaksTruce(p, { ...ok, wars: 2 })).toBe(false);
+      // M7E: never while already a traitor.
+      expect(aiBreaksTruce(p, { ...ok, traitor: true })).toBe(false);
+      expect(aiBreaksTruce(p, { ...ok, traitor: false })).toBe(true);
     }
     // Militarists need the least edge and may fight one other war.
     expect(AI_BREAK_STRENGTH.militarist).toBeLessThan(
@@ -240,7 +242,13 @@ describe("GrandStrategyExecution breakable truces", () => {
     expect(gs.breakTruce(a, b)).toBe("broken");
     expect(s.politicalPower).toBe(5000);
     expect(s.warSupport).toBe(500 + BREAK_WAR_SUPPORT);
-    expect(s.weariness).toBe(BREAK_WEARINESS);
+    // M7E: no weariness cost any more; the breaker is a traitor instead,
+    // for upstream's traitorDuration (30 s), through markTraitor.
+    expect(s.weariness).toBe(0);
+    expect(a.isTraitor()).toBe(true);
+    expect(a.getTraitorRemainingTicks()).toBe(game.config().traitorDuration());
+    expect(game.config().traitorDuration()).toBe(300);
+    expect(b.isTraitor()).toBe(false);
     expect(hasTruce(gs.peaceOf(a)!, b.smallID())).toBe(false);
     expect(hasTruce(gs.peaceOf(b)!, a.smallID())).toBe(false);
     expect(game.config().isAttackLocked(a, b)).toBe(false);
@@ -252,6 +260,47 @@ describe("GrandStrategyExecution breakable truces", () => {
         .warGoals.some((g) => g.target === a.smallID() && g.defensive === true),
     ).toBe(true);
     expect(gs.breakTruce(a, b)).toBe("no_truce");
+  });
+
+  test("breaking with a traitor is not treason (upstream alliance rule)", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    fight();
+    makePeace();
+    for (const side of [gs.peaceOf(a)!, gs.peaceOf(b)!]) {
+      for (const t of side.truces) t.lock = 0;
+    }
+    gs.peaceOf(a)!.revanche = [];
+    gs.peaceOf(b)!.revanche = [];
+    b.markTraitor();
+    gs.stateOf(a)!.politicalPower = BREAK_PP_COST;
+    expect(gs.breakTruce(a, b)).toBe("broken");
+    expect(a.isTraitor()).toBe(false);
+  });
+
+  test("the traitor mark runs out after 30 s and shows in the HUD update", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    fight();
+    makePeace();
+    for (const side of [gs.peaceOf(a)!, gs.peaceOf(b)!]) {
+      for (const t of side.truces) t.lock = 0;
+    }
+    gs.peaceOf(a)!.revanche = [];
+    gs.stateOf(a)!.politicalPower = BREAK_PP_COST;
+    expect(gs.breakTruce(a, b)).toBe("broken");
+    const mineAt = (ups: ReturnType<typeof seconds>) =>
+      ups
+        .flatMap((u) => u[GameUpdateType.GrandStrategy] ?? [])
+        .filter((u) => u.player === a.id());
+    const first = mineAt(seconds(1));
+    const ts = first[first.length - 1].traitorSeconds!;
+    expect(ts).toBeGreaterThan(27);
+    expect(ts).toBeLessThanOrEqual(30);
+    seconds(29);
+    expect(a.isTraitor()).toBe(false);
+    const later = mineAt(seconds(1));
+    expect(later[later.length - 1].traitorSeconds).toBe(0);
   });
 
   test("break intent through PeaceExecution, with a world message", () => {
@@ -407,7 +456,21 @@ describe("AI truce breaking in the execution", () => {
     sN.weariness = 0;
     for (let i = 0; i < 20; i++) game.executeNextTick();
     expect(hasTruce(gs.peaceOf(n)!, b.smallID())).toBe(true);
-    // ... and breaks it once it is breakable.
+    // M7E: ... nor while it is already a traitor ...
+    n.markTraitor();
+    for (let i = 0; i < 50; i++) {
+      game.executeNextTick();
+      b.removeTroops(Math.max(0, b.troops() - 1));
+      sN.politicalPower = Math.max(sN.politicalPower, 400_000);
+      sN.weariness = 0;
+    }
+    expect(hasTruce(gs.peaceOf(n)!, b.smallID())).toBe(true);
+    (n as unknown as { markedTraitorTick: number }).markedTraitorTick = -1;
+    expect(n.isTraitor()).toBe(false);
+    // ... and breaks it once it is breakable, becoming a traitor.
+    for (const side of [gs.peaceOf(n)!, gs.peaceOf(b)!]) {
+      for (const t of side.truces) t.seconds = Math.max(t.seconds, 100);
+    }
     for (let i = 0; i < 50; i++) {
       game.executeNextTick();
       b.removeTroops(Math.max(0, b.troops() - 1));
@@ -415,5 +478,6 @@ describe("AI truce breaking in the execution", () => {
       sN.weariness = 0;
     }
     expect(hasTruce(gs.peaceOf(n)!, b.smallID())).toBe(false);
+    expect(n.isTraitor()).toBe(true);
   });
 });

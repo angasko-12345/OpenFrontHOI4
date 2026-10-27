@@ -226,6 +226,11 @@ export interface GrandStrategyUpdate {
   revanche?: { target: string; tiles: number; seconds: number; wait: number }[];
   /** M7C stage 2: rallying after a lost war (truce with a claim holds). */
   recovering?: boolean;
+  /**
+   * M7E: seconds left on our upstream traitor mark (breaking a truce or an
+   * alliance); absent or 0 = not a traitor.
+   */
+  traitorSeconds?: number;
   /** M7C stage 3: our faction (share per-mille of world land). */
   faction?: {
     leader: string;

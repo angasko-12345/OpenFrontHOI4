@@ -324,6 +324,8 @@ export interface Player extends PlayerLike {
   // State & Properties
   isAlive(): boolean;
   isTraitor(): boolean;
+  /** Ticks left on the traitor mark (0 = not a traitor). */
+  getTraitorRemainingTicks(): number;
   markTraitor(): void;
   // Doomsday Clock (anti-stall): marked when below the rising territory bar.
   inDoomsdayClock(): boolean;

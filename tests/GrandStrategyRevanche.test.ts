@@ -258,6 +258,8 @@ describe("GrandStrategyExecution revanche", () => {
     expect(sb.politicalPower).toBe(7000);
     expect(sb.warSupport).toBe(600);
     expect(sb.weariness).toBe(50_000);
+    // M7E: a revanche break is justified, so no traitor mark.
+    expect(b.isTraitor()).toBe(false);
     expect(hasTruce(pa, b.smallID())).toBe(false);
     expect(game.config().isAttackLocked(a, b)).toBe(false);
     expect(gs.warOf(b)!.warGoals.some((g) => g.target === a.smallID())).toBe(

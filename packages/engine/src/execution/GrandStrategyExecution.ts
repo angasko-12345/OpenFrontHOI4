@@ -88,7 +88,6 @@ import {
   aiPeaceTarget,
   BREAK_PP_COST,
   BREAK_WAR_SUPPORT,
-  BREAK_WEARINESS,
   canBreakTruce,
   capitulationTarget,
   enemyEntry,
@@ -102,7 +101,6 @@ import {
   removeTruce,
   TimedTarget,
   truceLockSeconds,
-  WEARINESS_MAX,
   wearinessPermille,
 } from "@openfront/engine-lib/game/GrandStrategyPeace";
 import {
@@ -485,9 +483,11 @@ export class GrandStrategyExecution implements Execution {
   }
 
   /**
-   * Break the truce with `target` once its minimum lock is over: costs
-   * political power, war support and weariness, and hands the victim a
-   * defensive war goal against the breaker. Told to every player.
+   * Break the truce with `target` in its breakable window (its last
+   * TRUCE_BREAKABLE_SECONDS): costs political power and war support, marks
+   * the breaker a traitor (upstream markTraitor, 30 s) unless the victim
+   * already is one, and hands the victim a defensive war goal against the
+   * breaker. Told to every player.
    */
   breakTruce(player: Player, target: Player): PeaceCheck {
     if (!this.on("weariness")) return "disabled";
@@ -516,7 +516,8 @@ export class GrandStrategyExecution implements Execution {
       0,
       Math.min(1000, s.warSupport + BREAK_WAR_SUPPORT),
     );
-    s.weariness = Math.min(WEARINESS_MAX, (s.weariness ?? 0) + BREAK_WEARINESS);
+    // Upstream's alliance-betrayal rule: betraying a traitor is not treason.
+    if (!target.isTraitor()) player.markTraitor();
     removeTruce(
       mine,
       player.smallID(),
@@ -1903,6 +1904,7 @@ export class GrandStrategyExecution implements Execution {
         wars: ps.enemies.length,
         borders: true,
         canPay: s.politicalPower >= BREAK_PP_COST,
+        traitor: p.isTraitor(),
         strengthBias: this.on("ideology")
           ? aiBreakBias(s.ideology, this.states.get(t.target)?.ideology)
           : 0,
@@ -1966,6 +1968,7 @@ export class GrandStrategyExecution implements Execution {
               wait: revancheWait(ps, r.target),
             })),
       recovering: this.states.get(p.smallID())?.recovering === true,
+      traitorSeconds: Math.ceil(p.getTraitorRemainingTicks() / 10),
     };
   }
 

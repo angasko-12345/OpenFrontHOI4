@@ -14,6 +14,7 @@ import {
 } from "@openfront/engine-lib/game/GrandStrategyIdeology";
 import {
   BREAK_PP_COST,
+  BREAK_WAR_SUPPORT,
   TRUCE_BREAKABLE_SECONDS,
   TRUCE_MAX_LOCK,
   TRUCE_MIN_LOCK,
@@ -87,11 +88,16 @@ export function gsDuration(s: number): string {
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
 }
 
+/** Seconds a truce breaker stays a traitor (upstream Config.traitorDuration). */
+export const GS_TRAITOR_SECONDS = 30;
+
 /**
- * Truce list: each truce shows "locked Xs" while it cannot be broken, then
- * "breakable" with a Break button (costs PP, war support and weariness).
- * M7C stage 2: a truce with a nation we hold a revanche claim on shows a
- * cheaper Revanche button once half its lock is over (same break intent).
+ * Truce list: each truce shows "breakable in Xs" while it cannot be
+ * broken, then a Break button (PP and war support) with the warning that
+ * breaking makes us a traitor for 30 s (M7E). A banner shows our own
+ * traitor countdown. M7C stage 2: a truce with a nation we hold a revanche
+ * claim on shows an earlier Revanche button once half its lock is over
+ * (same break intent, no traitor mark).
  */
 export function renderTruces(
   d: GrandStrategyUpdate,
@@ -99,6 +105,7 @@ export function renderTruces(
   onBreak: (id: string) => void,
 ) {
   const truces = d.truces ?? [];
+  const traitor = d.traitorSeconds ?? 0;
   const claims = new Map((d.revanche ?? []).map((r) => [r.target, r]));
   const pp = d.politicalPower * 1000;
   const canPay = pp >= BREAK_PP_COST;
@@ -107,6 +114,15 @@ export function renderTruces(
     (r) => !truces.some((t) => t.target === r.target),
   );
   return html`${
+    traitor > 0
+      ? html`<div
+          class="rounded bg-red-900/60 px-2 py-1 text-red-100"
+          data-testid="gs-traitor"
+        >
+          Traitor ${traitor}s: weaker defence, nations target you
+        </div>`
+      : nothing
+  }${
     d.recovering === true
       ? html`<div
           class="rounded bg-emerald-900/50 px-2 py-1"
@@ -151,15 +167,15 @@ export function renderTruces(
                   : "bg-gray-900/60 text-gray-500"
               }"
               ?disabled=${!canRevanche}
-              title="Break for ${REVANCHE_BREAK_PP / 1000} PP to win back ${claim.tiles} tiles"
+              title="Break for ${REVANCHE_BREAK_PP / 1000} PP to win back ${claim.tiles} tiles (justified: no traitor mark)"
               data-testid="gs-revanche"
               @click=${() => onBreak(t.target)}
             >
               Revanche
             </button>`
           : lock > 0
-            ? html`<span class="shrink-0 opacity-80"
-                >locked
+            ? html`<span class="shrink-0 opacity-80" data-testid="gs-truce-lock"
+                >breakable in
                 ${lock}s${
                   claim !== undefined
                     ? html`<span class="text-amber-300">
@@ -168,8 +184,7 @@ export function renderTruces(
                     : nothing
                 }</span
               >`
-            : html`<span class="flex shrink-0 items-center gap-1">
-                <span class="text-yellow-300">breakable</span>
+            : html`<span class="flex shrink-0 flex-col items-end">
                 <button
                   class="min-h-9 rounded px-3 sm:min-h-0 sm:px-2 ${
                     canPay
@@ -177,11 +192,17 @@ export function renderTruces(
                       : "bg-gray-900/60 text-gray-500"
                   }"
                   ?disabled=${!canPay}
+                  title="Break for ${BREAK_PP_COST / 1000} PP and ${-BREAK_WAR_SUPPORT / 10}% war support; you'll be a traitor for ${GS_TRAITOR_SECONDS}s"
                   data-testid="gs-break-truce"
                   @click=${() => onBreak(t.target)}
                 >
-                  Break
+                  Break (${BREAK_PP_COST / 1000} PP)
                 </button>
+                <span
+                  class="text-[10px] leading-tight text-yellow-300"
+                  data-testid="gs-break-warning"
+                  >You'll be a traitor for ${GS_TRAITOR_SECONDS}s</span
+                >
               </span>`
       }
     </div>`;
@@ -196,7 +217,7 @@ export function revancheRulesNote(): string {
     `while the truce holds you recover (+${RECOVERY_MANPOWER / 10}% manpower, ` +
     `+${RECOVERY_POLITICAL_POWER / 10}% PP, faster weariness recovery); after ` +
     `half its lock you may break it for ${REVANCHE_BREAK_PP / 1000} PP with no ` +
-    `other cost, and attacking the winner costs ` +
+    `other cost and no traitor mark, and attacking the winner costs ` +
     `${-REVANCHE_ATTACK_LOSS / 10}% fewer troops until the land is back.`
   );
 }
@@ -208,9 +229,11 @@ export function truceRulesNote(): string {
     `land stays where it is. It cannot be broken for ${TRUCE_MIN_LOCK / 60}-` +
     `${TRUCE_MAX_LOCK / 60} min (longer after a capitulation, a big loss or ` +
     `against a much bigger winner; shorter after a short war between calm ` +
-    `sides), then either side may break it for ${BREAK_PP_COST / 1000} PP, ` +
-    `war support and weariness, giving the victim a war goal. It ends ` +
-    `${TRUCE_BREAKABLE_SECONDS / 60} min after the lock.`
+    `sides). In its last ${TRUCE_BREAKABLE_SECONDS / 60} min either side may ` +
+    `break it for ${BREAK_PP_COST / 1000} PP and ` +
+    `${-BREAK_WAR_SUPPORT / 10}% war support: the breaker is a traitor for ` +
+    `${GS_TRAITOR_SECONDS}s (weaker defence, nations target it) and the ` +
+    `victim gets a war goal.`
   );
 }
 

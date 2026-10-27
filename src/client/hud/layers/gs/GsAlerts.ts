@@ -22,6 +22,7 @@ export type GsAlertKind =
   | "peace"
   | "truce"
   | "trucebroken"
+  | "traitor"
   | "ideology"
   | "capitulation"
   | "research"
@@ -57,6 +58,7 @@ export const ALERT_MS: Record<GsAlertKind, number> = {
   peace: 60_000,
   truce: 10_000,
   trucebroken: 12_000,
+  traitor: 10_000,
   ideology: 8_000,
   capitulation: 15_000,
   research: 8_000,
@@ -157,6 +159,15 @@ export function diffGsAlerts(
         target: t.target,
       });
     }
+  }
+  // M7E: we just became a traitor (broke a truce or an alliance).
+  if ((prev.traitorSeconds ?? 0) === 0 && (next.traitorSeconds ?? 0) > 0) {
+    out.push({
+      kind: "traitor",
+      text: `You're a traitor for ${next.traitorSeconds}s: weaker defence, nations will target you`,
+      tab: "war",
+      tone: "danger",
+    });
   }
   // M7C stage 2: a new revanche claim, and a claim whose truce may now be
   // broken (its wait reached zero while the truce still stands).
@@ -404,6 +415,7 @@ const KIND_ICON: Record<GsAlertKind, GsIconName> = {
   peace: "peace",
   truce: "peace",
   trucebroken: "war",
+  traitor: "war",
   ideology: "decisions",
   capitulation: "war",
   research: "research",

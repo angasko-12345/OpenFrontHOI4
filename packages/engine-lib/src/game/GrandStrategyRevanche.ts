@@ -12,9 +12,10 @@
  * - Recovery: while that truce holds, the claimant rallies (more manpower
  *   and political power, faster weariness recovery).
  * - Revanche break: once half of the truce's minimum lock is over, the
- *   claimant (only) may break the truce at a discount: REVANCHE_BREAK_PP,
- *   no war-support or weariness cost, no war goal for the old winner; the
- *   claimant gets a war goal against it instead.
+ *   claimant (only) may break the truce early: REVANCHE_BREAK_PP, no
+ *   war-support cost, no traitor mark (M7E: the break is justified, unlike
+ *   a plain break), no war goal for the old winner; the claimant gets a war
+ *   goal against it instead.
  * - Attacking the claim's target costs REVANCHE_ATTACK_LOSS fewer troops.
  * - Retaking land from the target pays the claim down; at zero, or when
  *   it expires, it is gone.
@@ -31,7 +32,7 @@ export const REVANCHE_MIN_LOST_PERMILLE = 100;
 export const REVANCHE_SECONDS = 900;
 /** Most claims a nation keeps (newest replace the smallest). */
 export const MAX_REVANCHE = 3;
-/** PP (milli) a revanche break costs (a normal break: BREAK_PP_COST). */
+/** PP (milli) a revanche break costs (same as BREAK_PP_COST since M7E). */
 export const REVANCHE_BREAK_PP = 50_000;
 /** Per-mille attacker losses vs the claim's target. */
 export const REVANCHE_ATTACK_LOSS = -150;
