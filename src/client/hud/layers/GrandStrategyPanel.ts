@@ -285,23 +285,36 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     if (wide !== this.wide) this.wide = wide;
     const box = document.querySelector("control-panel")?.parentElement;
     const r = box?.getBoundingClientRect();
+    // M7E: the in-game tutorial sits right above the control panel in the
+    // same column; keep the sheet above it too, so its GS steps stay readable.
+    const tut = document.querySelector("tutorial-panel");
+    const tr =
+      tut && !tut.classList.contains("hidden")
+        ? tut.getBoundingClientRect()
+        : undefined;
+    const top = Math.min(
+      r && r.height > 0 ? r.top : window.innerHeight,
+      tr && tr.height > 0 ? tr.top : window.innerHeight,
+    );
     const inset =
-      r && r.height > 0
+      top < window.innerHeight
         ? Math.min(
             Math.round(window.innerHeight * 0.45),
-            Math.max(0, Math.round(window.innerHeight - r.top)),
+            Math.max(0, Math.round(window.innerHeight - top)),
           )
         : 0;
     if (inset !== this.bottomInset) this.bottomInset = inset;
     // Upstream's player info overlay is fixed at the top centre (z 1001)
     // and would cover the bar: step below it while it shows.
-    let top = BAR_TOP_PX;
+    let barTop = BAR_TOP_PX;
     const info = document.querySelector("player-info-overlay .fixed > div");
     if (info && !info.classList.contains("invisible")) {
       const ir = info.getBoundingClientRect();
-      if (ir.height > 0 && ir.bottom + 4 > top) top = Math.round(ir.bottom + 4);
+      if (ir.height > 0 && ir.bottom + 4 > barTop) {
+        barTop = Math.round(ir.bottom + 4);
+      }
     }
-    if (top !== this.topOffset) this.topOffset = top;
+    if (barTop !== this.topOffset) this.topOffset = barTop;
   }
 
   private handleKey(e: KeyboardEvent) {
