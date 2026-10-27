@@ -68,7 +68,7 @@ export const TRUCE_SHORT_WAR = 120;
 export const TRUCE_CALM_SECONDS = 60;
 export const TRUCE_CALM_WEARINESS = 100;
 /** After the lock, a truce holds (breakable) this long, then expires. */
-export const TRUCE_BREAKABLE_SECONDS = 240;
+export const TRUCE_BREAKABLE_SECONDS = 120;
 /** Breaking a truce: political power (thousandths), war support, weariness. */
 export const BREAK_PP_COST = 100_000;
 export const BREAK_WAR_SUPPORT = -100;
@@ -368,9 +368,9 @@ export function removeTruce(
 
 /** Troop strength (own / partner, per-mille) an AI wants before breaking. */
 export const AI_BREAK_STRENGTH: Readonly<Record<AiPersonality, number>> = {
-  militarist: 1500,
-  industrialist: 2500,
-  defender: 4000,
+  militarist: 1250,
+  industrialist: 2000,
+  defender: 3000,
 };
 /** Most weariness (per-mille) at which an AI still breaks a truce. */
 export const AI_BREAK_MAX_WEARINESS: Readonly<Record<AiPersonality, number>> = {
