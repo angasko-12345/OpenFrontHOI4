@@ -29,6 +29,7 @@ import { NationExecution } from "./NationExecution";
 import { NoOpExecution } from "./NoOpExecution";
 import { PauseExecution } from "./PauseExecution";
 import { PeaceExecution } from "./PeaceExecution";
+import { PuppetExecution } from "./PuppetExecution";
 import { QuickChatExecution } from "./QuickChatExecution";
 import { RetreatExecution } from "./RetreatExecution";
 import { SetFocusExecution } from "./SetFocusExecution";
@@ -135,6 +136,8 @@ export class Executor {
         );
       case "faction":
         return new FactionExecution(player, intent.mode, intent.targetID);
+      case "puppet":
+        return new PuppetExecution(player, intent.mode, intent.targetID);
       case "build_unit":
         return new ConstructionExecution(
           player,

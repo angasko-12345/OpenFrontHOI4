@@ -31,6 +31,7 @@ import {
   LawCheck,
   NationGsState,
   newNationState,
+  PP_CAP,
   setLaw,
   startFocus,
   takeAction,
@@ -104,6 +105,24 @@ import {
   WEARINESS_MAX,
   wearinessPermille,
 } from "@openfront/engine-lib/game/GrandStrategyPeace";
+import {
+  addWindow,
+  advanceAutonomy,
+  advanceWindows,
+  aiPrefersPuppet,
+  canDeclareIndependence,
+  canPuppet,
+  INDEPENDENCE_LOCK,
+  INDEPENDENCE_PP,
+  type IndependenceCheck,
+  PUPPET_MAX_PER_OVERLORD,
+  PUPPET_MIN_LOST,
+  PUPPET_PP,
+  type PuppetCheck,
+  puppetJoinsWar,
+  tributeOf,
+  tributePermille,
+} from "@openfront/engine-lib/game/GrandStrategyPuppet";
 import {
   advanceResearch,
   aiResearch,
@@ -216,7 +235,8 @@ export class GrandStrategyExecution implements Execution {
    * "weariness" = M7 stage A (war weariness, capitulation, peace, truces),
    * "ideology" = M7 stage B (no ideology changes; everyone non-aligned),
    * "revanche" = M7C stage 2 (no revanche claims, recovery or revanche
-   * breaks), "faction" = M7C stage 3 (no factions).
+   * breaks), "faction" = M7C stage 3 (no factions), "puppet" = M7 stage D
+   * (no puppets).
    */
   private ablated?: Set<string>;
 
@@ -230,7 +250,8 @@ export class GrandStrategyExecution implements Execution {
       | "weariness"
       | "ideology"
       | "revanche"
-      | "faction",
+      | "faction"
+      | "puppet",
   ): void {
     (this.ablated ??= new Set()).add(part);
   }
@@ -287,7 +308,17 @@ export class GrandStrategyExecution implements Execution {
     const pa = this.peace.get(a.smallID());
     if (pa !== undefined && hasTruce(pa, b.smallID())) return true;
     const pb = this.peace.get(b.smallID());
-    return pb !== undefined && hasTruce(pb, a.smallID());
+    if (pb !== undefined && hasTruce(pb, a.smallID())) return true;
+    // M7 stage D: a puppet and its overlord never fight.
+    return this.bonded(a.smallID(), b.smallID());
+  }
+
+  /** Whether one of the two is the other's puppet. */
+  private bonded(a: number, b: number): boolean {
+    if (!this.puppetsOn()) return false;
+    return (
+      this.states.get(a)?.overlord === b || this.states.get(b)?.overlord === a
+    );
   }
 
   /**
@@ -433,6 +464,9 @@ export class GrandStrategyExecution implements Execution {
           : lost;
       addRevanche(loserState, winner.smallID(), lostTiles, peak, lock);
     }
+    if (this.puppetsOn() && lostPermille >= PUPPET_MIN_LOST) {
+      this.offerPuppetWindow(winner, loser);
+    }
     this.mg?.displayMessage(
       why === "peace"
         ? "events_display.gs_peace_signed"
@@ -559,12 +593,25 @@ export class GrandStrategyExecution implements Execution {
       : null;
   }
 
-  /** Land share of a set of small ids, per-mille of the world's land. */
+  /**
+   * Land share of a set of small ids, per-mille of the world's land. M7
+   * stage D: each id's puppets count with it (puppets are in no faction,
+   * so nothing is counted twice).
+   */
   private shareOf(ids: readonly number[]): number {
     const mg = this.mg!;
     let tiles = 0;
-    for (const id of ids) tiles += this.livePlayer(id)?.numTilesOwned() ?? 0;
+    for (const id of ids) tiles += this.blocTiles(id);
     return Math.floor((tiles * 1000) / Math.max(1, mg.numLandTiles()));
+  }
+
+  /** Land of a nation and its puppets (just its own land if puppets are off). */
+  private blocTiles(id: number): number {
+    let tiles = this.livePlayer(id)?.numTilesOwned() ?? 0;
+    for (const pid of this.puppetsOf(id)) {
+      tiles += this.livePlayer(pid)?.numTilesOwned() ?? 0;
+    }
+    return tiles;
   }
 
   private nationsAlive(): number {
@@ -580,6 +627,7 @@ export class GrandStrategyExecution implements Execution {
       return "disabled";
     }
     const s = this.stateOf(player)!;
+    if (this.overlordOf(player) !== undefined) return "puppet";
     const check = canFoundFaction({
       ideology: s.ideology,
       politicalPower: s.politicalPower,
@@ -607,6 +655,7 @@ export class GrandStrategyExecution implements Execution {
     if (player.type() === PlayerType.Bot || !player.isAlive()) {
       return "disabled";
     }
+    if (this.overlordOf(player) !== undefined) return "puppet";
     const mine = this.peaceOf(player)!;
     const check = canJoinFaction({
       ideology: this.states.get(player.smallID())?.ideology,
@@ -849,15 +898,380 @@ export class GrandStrategyExecution implements Execution {
                 : this.joinCheck(p, leader),
           };
         }),
-      canFound: canFoundFaction({
-        ideology: this.states.get(p.smallID())?.ideology,
-        politicalPower: this.states.get(p.smallID())?.politicalPower ?? 0,
-        inFaction: mine !== undefined,
-        share: this.shareOf([p.smallID()]),
-        factions: (this.factions ?? []).length,
-        nations,
+      canFound:
+        this.overlordOf(p) !== undefined
+          ? ("puppet" as FactionCheck)
+          : canFoundFaction({
+              ideology: this.states.get(p.smallID())?.ideology,
+              politicalPower: this.states.get(p.smallID())?.politicalPower ?? 0,
+              inFaction: mine !== undefined,
+              share: this.shareOf([p.smallID()]),
+              factions: (this.factions ?? []).length,
+              nations,
+            }),
+    };
+  }
+
+  // ---- M7 stage D: puppets ----
+
+  private puppetsOn(): boolean {
+    return this.on("puppet") && this.on("weariness");
+  }
+
+  /** Small id of `p`'s overlord while it is a puppet. */
+  overlordOf(p: Player): number | undefined {
+    if (!this.puppetsOn() || p.type() === PlayerType.Bot) return undefined;
+    return this.states.get(p.smallID())?.overlord;
+  }
+
+  /** Small ids of the puppets of `id`, ascending. */
+  puppetsOf(id: number): number[] {
+    if (!this.puppetsOn()) return [];
+    const out: number[] = [];
+    for (const [pid, s] of this.states) {
+      if (s.overlord === id) out.push(pid);
+    }
+    return out.sort((x, y) => x - y);
+  }
+
+  /**
+   * A won peace or capitulation: the winner may puppet the loser for
+   * PUPPET_WINDOW seconds. An AI winner decides at once by personality;
+   * a human winner is told and decides in the War tab.
+   */
+  private offerPuppetWindow(winner: Player, loser: Player): void {
+    const ws = this.stateOf(winner);
+    if (ws === null) return;
+    ws.puppetWindows = addWindow(ws.puppetWindows ?? [], loser.smallID());
+    if (winner.type() === PlayerType.Nation) {
+      if (
+        aiPrefersPuppet(
+          aiPersonalityFor(winner.smallID()),
+          loser.numTilesOwned(),
+          winner.numTilesOwned(),
+        )
+      ) {
+        this.demandPuppet(winner, loser);
+      }
+    } else if (
+      winner.type() === PlayerType.Human &&
+      this.puppetCheck(winner, loser) === "ok"
+    ) {
+      this.mg?.displayMessage(
+        "events_display.gs_puppet_window",
+        MessageType.GS_DIPLOMACY,
+        winner.id(),
+        undefined,
+        { name: loser.displayName() },
+      );
+    }
+  }
+
+  /** Whether `player` may puppet `target` now. */
+  puppetCheck(player: Player, target: Player): PuppetCheck {
+    if (!this.puppetsOn()) return "disabled";
+    if (
+      target === player ||
+      !target.isAlive() ||
+      !player.isAlive() ||
+      target.type() === PlayerType.Bot ||
+      player.type() === PlayerType.Bot
+    ) {
+      return "invalid_target";
+    }
+    const s = this.stateOf(player)!;
+    const land = Math.max(1, this.mg!.numLandTiles());
+    return canPuppet({
+      demanderIsPuppet: s.overlord !== undefined,
+      targetIsPuppet: this.states.get(target.smallID())?.overlord !== undefined,
+      window: (s.puppetWindows ?? []).some(
+        (w) => w.target === target.smallID(),
+      ),
+      demanderTiles: player.numTilesOwned(),
+      targetTiles: target.numTilesOwned(),
+      puppets: this.puppetsOf(player.smallID()).length,
+      blocShare: this.shareOf([player.smallID()]),
+      targetShare: Math.floor((this.blocTiles(target.smallID()) * 1000) / land),
+      politicalPower: s.politicalPower,
+    });
+  }
+
+  /**
+   * Make the beaten `target` our puppet (PUPPET_PP): the truce, its
+   * revanche claim on us, war goals between us and its faction seat go;
+   * its own puppets are released (no chains).
+   */
+  demandPuppet(player: Player, target: Player): PuppetCheck {
+    const check = this.puppetCheck(player, target);
+    if (check !== "ok") return check;
+    const s = this.stateOf(player)!;
+    const ts = this.stateOf(target)!;
+    const o = player.smallID();
+    const t = target.smallID();
+    s.politicalPower -= PUPPET_PP;
+    s.puppetWindows = (s.puppetWindows ?? []).filter((w) => w.target !== t);
+    for (const sub of this.puppetsOf(t)) {
+      const sp = this.livePlayer(sub);
+      if (sp !== null)
+        this.endBond(sp, target, "events_display.gs_puppet_released");
+    }
+    const po = this.peaceOf(player)!;
+    const pt = this.peaceOf(target)!;
+    removeTruce(po, o, pt, t);
+    for (const [ps, other] of [
+      [po, t],
+      [pt, o],
+    ] as const) {
+      ps.enemies = ps.enemies.filter((e) => e.target !== other);
+      ps.offers = ps.offers.filter((x) => x.target !== other);
+      if (ps.revanche !== undefined) {
+        ps.revanche = ps.revanche.filter((r) => r.target !== other);
+      }
+    }
+    for (const [w, other] of [
+      [this.warOf(player)!, t],
+      [this.warOf(target)!, o],
+    ] as const) {
+      w.warGoals = w.warGoals.filter((g) => g.target !== other);
+      if (w.justifying?.target === other) w.justifying = null;
+    }
+    if (this.factionOfPlayer(target) !== undefined) {
+      const f = this.factionOfPlayer(target)!;
+      const leader = this.livePlayer(f.leader) ?? target;
+      this.factions = leaveFaction(this.factions!, t);
+      this.factionMessage("events_display.gs_faction_left", target, leader);
+    }
+    ts.overlord = o;
+    ts.autonomy = 0;
+    ts.puppetWindows = [];
+    this.mg?.displayMessage(
+      "events_display.gs_puppet_created",
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      { name: target.displayName(), other: player.displayName() },
+      undefined,
+      target.id(),
+    );
+    return "ok";
+  }
+
+  /** The overlord sets its puppet free (truce INDEPENDENCE_LOCK seconds). */
+  releasePuppet(player: Player, target: Player): PuppetCheck {
+    if (!this.puppetsOn()) return "disabled";
+    if (this.overlordOf(target) !== player.smallID() || !player.isAlive()) {
+      return "invalid_target";
+    }
+    this.endBond(target, player, "events_display.gs_puppet_released");
+    return "ok";
+  }
+
+  /** Whether `player` (a puppet) may declare independence now. */
+  independenceCheck(player: Player): IndependenceCheck {
+    if (!this.puppetsOn()) return "disabled";
+    const s = this.states.get(player.smallID());
+    const o = s?.overlord === undefined ? null : this.livePlayer(s.overlord);
+    if (s === undefined || o === null) return "not_puppet";
+    return canDeclareIndependence({
+      isPuppet: true,
+      autonomy: s.autonomy ?? 0,
+      overlordWeariness: wearinessPermille(
+        this.states.get(o.smallID())?.weariness,
+      ),
+      puppetTroops: Math.floor(player.troops()),
+      overlordTroops: Math.floor(o.troops()),
+      politicalPower: s.politicalPower,
+    });
+  }
+
+  /** A puppet breaks free (INDEPENDENCE_PP; truce INDEPENDENCE_LOCK). */
+  declareIndependence(player: Player): IndependenceCheck {
+    const check = this.independenceCheck(player);
+    if (check !== "ok") return check;
+    const s = this.states.get(player.smallID())!;
+    const o = this.livePlayer(s.overlord!)!;
+    s.politicalPower -= INDEPENDENCE_PP;
+    this.endBond(player, o, "events_display.gs_puppet_independent");
+    return "ok";
+  }
+
+  /**
+   * End a puppet bond. With both alive: a truce locked INDEPENDENCE_LOCK
+   * seconds and a world message; a dead overlord just frees the puppet.
+   */
+  private endBond(puppet: Player, overlord: Player, key: string | null): void {
+    const s = this.states.get(puppet.smallID());
+    if (s === undefined) return;
+    delete s.overlord;
+    s.autonomy = 0;
+    if (key === null || !overlord.isAlive() || !puppet.isAlive()) return;
+    addTruce(
+      this.peaceOf(puppet)!,
+      puppet.smallID(),
+      this.peaceOf(overlord)!,
+      overlord.smallID(),
+      INDEPENDENCE_LOCK,
+    );
+    this.mg?.displayMessage(
+      key,
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      {
+        name: puppet.displayName(),
+        other: overlord.displayName(),
+        minutes: Math.ceil(INDEPENDENCE_LOCK / 60),
+      },
+      undefined,
+      puppet.id(),
+    );
+  }
+
+  /** Tribute share `p` pays this moment, with the overlord receiving it. */
+  private tributeTo(p: Player): { overlord: Player; permille: number } | null {
+    if (!this.puppetsOn() || p.type() === PlayerType.Bot) return null;
+    const s = this.states.get(p.smallID());
+    if (s?.overlord === undefined) return null;
+    const o = this.livePlayer(s.overlord);
+    if (o === null) return null;
+    const permille = tributePermille(
+      this.shareOf([s.overlord]),
+      s.autonomy ?? 0,
+    );
+    return permille > 0 ? { overlord: o, permille } : null;
+  }
+
+  /**
+   * Once a second after the diplomacy pass: count puppet windows down,
+   * free puppets whose overlord is gone, build autonomy, and let AI
+   * puppets break free when they may.
+   */
+  private puppetSecond(players: readonly Player[]): void {
+    const coalition = this.warLayer ? this.coalitionLeader : null;
+    for (const p of players) {
+      if (p.type() === PlayerType.Bot || !p.isAlive()) continue;
+      const s = this.states.get(p.smallID());
+      if (s === undefined) continue;
+      if ((s.puppetWindows ?? []).length > 0) {
+        s.puppetWindows = advanceWindows(s.puppetWindows!);
+      }
+      if (s.overlord === undefined) continue;
+      const o = this.livePlayer(s.overlord);
+      if (o === null || this.states.get(s.overlord)?.overlord !== undefined) {
+        this.endBond(p, o ?? p, null);
+        continue;
+      }
+      s.autonomy = advanceAutonomy(s.autonomy ?? 0, {
+        overlordWeariness: wearinessPermille(
+          this.states.get(s.overlord)?.weariness,
+        ),
+        overlordIsCoalitionTarget: coalition === s.overlord,
+        puppetTiles: p.numTilesOwned(),
+        overlordTiles: o.numTilesOwned(),
+      });
+      if (
+        p.type() === PlayerType.Nation &&
+        this.independenceCheck(p) === "ok"
+      ) {
+        this.declareIndependence(p);
+      }
+    }
+  }
+
+  /**
+   * Land changed hands between two nations: the overlord protects a
+   * puppet that is attacked (defensive war goal), and an overlord's
+   * puppets join its war against the other side (defensive war goal and,
+   * for AI puppets, hostility), bounded by puppetJoinsWar. Needs the war
+   * layer: the held goal is what keeps a puppet from joining twice.
+   */
+  private puppetWars(attacker: Player, defender: Player): void {
+    if (!this.warLayer) return;
+    const ds = this.states.get(defender.smallID());
+    if (ds?.overlord !== undefined && ds.overlord !== attacker.smallID()) {
+      const o = this.livePlayer(ds.overlord);
+      if (o !== null) {
+        const ow = this.warOf(o)!;
+        if (!hasWarGoal(ow, attacker.smallID())) {
+          grantDefensiveGoal(ow, attacker.smallID());
+        }
+      }
+    }
+    for (const [overlord, enemy] of [
+      [attacker, defender],
+      [defender, attacker],
+    ] as const) {
+      for (const pid of this.puppetsOf(overlord.smallID())) {
+        if (pid === enemy.smallID()) continue;
+        const pp = this.livePlayer(pid);
+        if (pp === null) continue;
+        const pw = this.warOf(pp)!;
+        const join = puppetJoinsWar({
+          weariness: wearinessPermille(this.states.get(pid)?.weariness),
+          wars: this.peace.get(pid)?.enemies.length ?? 0,
+          blocked:
+            hasWarGoal(pw, enemy.smallID()) || this.truceLocked(pp, enemy),
+        });
+        if (!join) continue;
+        grantDefensiveGoal(pw, enemy.smallID());
+        if (pp.type() === PlayerType.Nation) {
+          pp.updateRelation(enemy, CALL_TO_ARMS_RELATION);
+        } else if (pp.type() === PlayerType.Human) {
+          this.mg?.displayMessage(
+            "events_display.gs_puppet_war",
+            MessageType.GS_DIPLOMACY,
+            pp.id(),
+            undefined,
+            { name: enemy.displayName(), other: overlord.displayName() },
+          );
+        }
+      }
+    }
+  }
+
+  /** HUD view of our puppet bonds. */
+  private puppetUpdate(p: Player) {
+    if (!this.puppetsOn()) return {};
+    const mg = this.mg!;
+    const idOf = (small: number) => {
+      const t = mg.playerBySmallID(small);
+      return t.isPlayer() ? (t as Player).id() : "";
+    };
+    const s = this.states.get(p.smallID());
+    const mine = this.tributeTo(p);
+    return {
+      overlord: s?.overlord === undefined ? null : idOf(s.overlord),
+      autonomy: s?.autonomy ?? 0,
+      tribute: mine?.permille ?? 0,
+      independence: this.independenceCheck(p) as string,
+      puppets: this.puppetsOf(p.smallID()).map((id) => {
+        const pp = this.livePlayer(id);
+        return {
+          id: idOf(id),
+          autonomy: this.states.get(id)?.autonomy ?? 0,
+          tribute: pp === null ? 0 : (this.tributeTo(pp)?.permille ?? 0),
+        };
+      }),
+      puppetCap: PUPPET_MAX_PER_OVERLORD,
+      puppetWindows: (s?.puppetWindows ?? []).map((w) => {
+        const t = this.livePlayer(w.target);
+        return {
+          target: idOf(w.target),
+          seconds: w.seconds,
+          check:
+            t === null
+              ? ("invalid_target" as PuppetCheck)
+              : this.puppetCheck(p, t),
+        };
       }),
     };
+  }
+
+  /** Coalition size of a nation: its bloc; a puppet counts for nothing. */
+  private coalitionTiles(p: Player): number {
+    if (!this.puppetsOn()) return p.numTilesOwned();
+    if (this.states.get(p.smallID())?.overlord !== undefined) return 0;
+    return p.isAlive() ? this.blocTiles(p.smallID()) : p.numTilesOwned();
   }
 
   coalitionLeaderId(): number | null {
@@ -870,7 +1284,8 @@ export class GrandStrategyExecution implements Execution {
       target !== player &&
       target.isAlive() &&
       target.type() !== PlayerType.Bot &&
-      !player.isFriendly(target)
+      !player.isFriendly(target) &&
+      !this.bonded(player.smallID(), target.smallID())
     );
   }
 
@@ -920,6 +1335,13 @@ export class GrandStrategyExecution implements Execution {
       defender.type() !== PlayerType.Bot
     ) {
       this.callToArms(attacker, defender);
+    }
+    if (
+      this.puppetsOn() &&
+      attacker.type() !== PlayerType.Bot &&
+      defender.type() !== PlayerType.Bot
+    ) {
+      this.puppetWars(attacker, defender);
     }
     if (!this.warLayer) return;
     const w = this.warOf(attacker);
@@ -1007,9 +1429,26 @@ export class GrandStrategyExecution implements Execution {
   adjustTroopGrowth(player: Player, base: number, maxTroops: number): number {
     if (base <= 0) return base;
     const m = this.modifiers(player).manpower;
-    if (m === 0) return base;
-    const scaled = (base * (1000 + m)) / 1000;
-    return Math.max(0, Math.min(scaled, maxTroops - player.troops()));
+    const grown =
+      m === 0
+        ? base
+        : Math.max(
+            0,
+            Math.min((base * (1000 + m)) / 1000, maxTroops - player.troops()),
+          );
+    // M7 stage D: a puppet hands a share of its new manpower to its
+    // overlord, as far as the overlord's troop cap has room.
+    const t = this.tributeTo(player);
+    if (t === null) return grown;
+    const o = t.overlord;
+    const room = Math.max(
+      0,
+      Math.floor(this.mg!.config().maxTroops(o) - o.troops()),
+    );
+    const give = Math.min(tributeOf(Math.floor(grown), t.permille), room);
+    if (give <= 0) return grown;
+    o.addTroops(give);
+    return grown - give;
   }
 
   adjustGold(player: Player, base: bigint): bigint {
@@ -1019,9 +1458,15 @@ export class GrandStrategyExecution implements Execution {
       (s === null || !this.on("civgold")
         ? 0
         : civGoldPermille(freeCivFactories(s)));
-    if (g === 0) return base;
-    const scaled = (base * BigInt(1000 + g)) / 1000n;
-    return scaled < 0n ? 0n : scaled;
+    let scaled = g === 0 ? base : (base * BigInt(1000 + g)) / 1000n;
+    if (scaled < 0n) scaled = 0n;
+    // M7 stage D: a puppet pays a share of its gold income to its overlord.
+    const t = this.tributeTo(player);
+    if (t === null || scaled <= 0n) return scaled;
+    const give = (scaled * BigInt(t.permille)) / 1000n;
+    if (give <= 0n) return scaled;
+    t.overlord.addGold(give);
+    return scaled - give;
   }
 
   /**
@@ -1127,7 +1572,7 @@ export class GrandStrategyExecution implements Execution {
           this.coalitionLeader,
           players
             .filter((p) => p.type() !== PlayerType.Bot)
-            .map((p) => ({ id: p.smallID(), tiles: p.numTilesOwned() })),
+            .map((p) => ({ id: p.smallID(), tiles: this.coalitionTiles(p) })),
           mg.numLandTiles(),
         );
     const held = this.countDeposits(mg);
@@ -1136,6 +1581,7 @@ export class GrandStrategyExecution implements Execution {
     const knownBy = this.on("research") ? this.techSpread(players) : () => 0;
     if (this.on("weariness")) this.diplomacySecond(mg, players);
     if (this.factionsOn()) this.factionSecond(mg, players);
+    if (this.puppetsOn()) this.puppetSecond(players);
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
@@ -1217,6 +1663,7 @@ export class GrandStrategyExecution implements Execution {
       s.importSteel = this.on("trade") ? trade.steel : 0;
       s.importOil = this.on("trade") ? trade.oil : 0;
       const res = balanceOf(s);
+      const ppBefore = s.politicalPower;
       advanceSecond(s, {
         factoryStructureLevels: factoryLevels,
         tilesOwned: p.numTilesOwned(),
@@ -1224,6 +1671,17 @@ export class GrandStrategyExecution implements Execution {
         troops: Math.floor(p.troops()),
         productionPermille: steelProductionPermille(res),
       });
+      // M7 stage D: a puppet pays a share of this second's political power.
+      const ppTribute = this.tributeTo(p);
+      if (ppTribute !== null && s.politicalPower > ppBefore) {
+        const os = this.stateOf(ppTribute.overlord)!;
+        const give = Math.min(
+          tributeOf(s.politicalPower - ppBefore, ppTribute.permille),
+          Math.max(0, PP_CAP - os.politicalPower),
+        );
+        s.politicalPower -= give;
+        os.politicalPower += give;
+      }
       // Only humans have a HUD to feed; nations would only bloat replays.
       if (p.type() !== PlayerType.Human) continue;
       humanUpdates.push({
@@ -1286,6 +1744,7 @@ export class GrandStrategyExecution implements Execution {
         ideologyCooldown: s.ideologyCooldown ?? 0,
         ...this.peaceUpdate(mg, p),
         ...this.factionUpdate(p),
+        ...this.puppetUpdate(p),
       });
     }
     if (humanUpdates.length > 0) {
@@ -1701,6 +2160,9 @@ export class GrandStrategyExecution implements Execution {
         ideology: ideologyDef(s.ideology).id,
         ideologyCooldown: s.ideologyCooldown ?? 0,
         recovering: s.recovering === true,
+        overlord: s.overlord ?? null,
+        autonomy: s.autonomy ?? 0,
+        puppetWindows: (s.puppetWindows ?? []).map((w) => ({ ...w })),
         ...warSnapshot(this.wars.get(id)),
         ...peaceSnapshot(this.peace.get(id)),
       })),
@@ -1747,6 +2209,9 @@ export class GrandStrategyExecution implements Execution {
           ideology: n.ideology,
           ideologyCooldown: n.ideologyCooldown,
           recovering: n.recovering,
+          ...(n.overlord === null ? {} : { overlord: n.overlord }),
+          autonomy: n.autonomy,
+          puppetWindows: n.puppetWindows.map((w) => ({ ...w })),
         },
       ]),
     );
@@ -1869,6 +2334,9 @@ const GrandStrategyStateSchema = z.object({
       ideology: z.string(),
       ideologyCooldown: zInt(),
       recovering: z.boolean(),
+      overlord: zInt().nullable(),
+      autonomy: zInt(),
+      puppetWindows: z.array(TimedTargetSchema),
       peakTiles: zInt(),
       tilesLostThisSecond: zInt(),
       lossesThisSecond: zInt(),
@@ -1906,9 +2374,19 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 13,
+  version: 14,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v14 added puppets (M7 stage D): everyone independent.
+    13: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        overlord: null,
+        autonomy: 0,
+        puppetWindows: [],
+      })),
+    }),
     // v13 added factions (M7C stage 3): none yet.
     12: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

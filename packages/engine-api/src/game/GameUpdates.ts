@@ -243,6 +243,20 @@ export interface GrandStrategyUpdate {
   }[];
   /** M7C stage 3: whether we may found a faction ("ok") or why not. */
   canFound?: string;
+  /** M7 stage D: our overlord while we are a puppet (player id), else null. */
+  overlord?: string | null;
+  /** M7 stage D: our autonomy as a puppet, per-mille (1000 = may break free). */
+  autonomy?: number;
+  /** M7 stage D: tribute share we pay our overlord now, per-mille. */
+  tribute?: number;
+  /** M7 stage D: whether we may declare independence ("ok") or why not. */
+  independence?: string;
+  /** M7 stage D: our puppets (autonomy and tribute share, per-mille). */
+  puppets?: { id: string; autonomy: number; tribute: number }[];
+  /** M7 stage D: most puppets one overlord may hold. */
+  puppetCap?: number;
+  /** M7 stage D: beaten nations we may puppet (seconds left, "ok" or why not). */
+  puppetWindows?: { target: string; seconds: number; check: string }[];
 }
 
 export interface BonusEventUpdate {

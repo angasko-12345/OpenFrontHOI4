@@ -503,6 +503,14 @@ export interface NationGsState {
    * second by the execution). Optional: absent = false.
    */
   recovering?: boolean;
+  /**
+   * M7 stage D (GrandStrategyPuppet): small id of our overlord while we are
+   * a puppet, our autonomy (per-mille), and the beaten nations we may
+   * still puppet (seconds left). Optional: absent = independent / 0 / none.
+   */
+  overlord?: number;
+  autonomy?: number;
+  puppetWindows?: { target: number; seconds: number }[];
 }
 
 export interface TimedEntry {
@@ -573,6 +581,8 @@ export function newNationState(startEquipment: number): NationGsState {
     weariness: 0,
     ideology: DEFAULT_IDEOLOGY,
     ideologyCooldown: 0,
+    autonomy: 0,
+    puppetWindows: [],
   };
 }
 

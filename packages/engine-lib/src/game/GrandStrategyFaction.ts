@@ -79,7 +79,9 @@ export type FactionCheck =
   | "leader_too_big"
   | "too_big"
   | "at_war"
-  | "alliance_blocked";
+  | "alliance_blocked"
+  /** M7 stage D: puppets are in no faction. */
+  | "puppet";
 
 export interface FounderInput {
   ideology: string | undefined;

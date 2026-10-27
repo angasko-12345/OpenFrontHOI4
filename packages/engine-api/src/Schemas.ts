@@ -49,6 +49,7 @@ export type Intent =
   | GsActionIntent
   | PeaceIntent
   | FactionIntent
+  | PuppetIntent
   | JustifyWarIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
@@ -67,6 +68,7 @@ export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
 export type GsActionIntent = z.infer<typeof GsActionIntentSchema>;
 export type PeaceIntent = z.infer<typeof PeaceIntentSchema>;
 export type FactionIntent = z.infer<typeof FactionIntentSchema>;
+export type PuppetIntent = z.infer<typeof PuppetIntentSchema>;
 export type JustifyWarIntent = z.infer<typeof JustifyWarIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
@@ -532,6 +534,17 @@ export const FactionIntentSchema = z.object({
   targetID: MappedID,
 });
 
+/**
+ * Grand Strategy (M7 stage D): puppet the beaten nation `targetID`
+ * ("demand"), release our puppet `targetID` ("release"), or declare our
+ * independence ("independence"; `targetID` is ignored).
+ */
+export const PuppetIntentSchema = z.object({
+  type: z.literal("puppet"),
+  mode: z.enum(["demand", "release", "independence"]),
+  targetID: MappedID,
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -654,6 +667,7 @@ export const IntentSchema = z.discriminatedUnion("type", [
   // Appended: earlier union positions keep their wire tags.
   PeaceIntentSchema,
   FactionIntentSchema,
+  PuppetIntentSchema,
 ]);
 
 // StampedIntent = Intent with server-stamped clientID (used in turns and execution)
