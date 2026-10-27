@@ -37,6 +37,8 @@ export interface GsBarState {
   dockOpen: boolean;
   /** Dot on the command chip: something wants attention in a tab. */
   attention: "none" | "info" | "danger" | "good";
+  /** M7E: what the tutorial points at (pulsing ring). */
+  highlight?: "bar" | "dock" | null;
 }
 
 const DOT: Record<GsBarState["attention"], string> = {
@@ -77,7 +79,7 @@ export function renderGsResourceBar(
     <div
       class="pointer-events-auto grid w-full grid-cols-5 gap-0.5 rounded-md bg-gray-900/88 p-0.5 text-white shadow-lg backdrop-blur-sm ${
         top ? "sm:flex sm:w-auto sm:flex-nowrap" : ""
-      }"
+      } ${st.highlight === "bar" ? "tutorial-highlight" : ""}"
       role="toolbar"
       aria-label="Grand Strategy resources"
     >
@@ -112,7 +114,7 @@ export function renderGsResourceBar(
           </button>`,
       )}
       <button
-        class="relative flex ${top ? "h-10 sm:h-8 sm:px-2" : "h-9"} min-w-0 items-center justify-center gap-1 rounded px-1 text-[12px] font-semibold ${st.dockOpen ? "bg-blue-700" : "bg-blue-900/70 hover:bg-blue-800"}"
+        class="relative flex ${top ? "h-10 sm:h-8 sm:px-2" : "h-9"} min-w-0 items-center justify-center gap-1 rounded px-1 text-[12px] font-semibold ${st.dockOpen ? "bg-blue-700" : "bg-blue-900/70 hover:bg-blue-800"} ${st.highlight === "dock" ? "tutorial-highlight" : ""}"
         aria-label=${st.dockOpen ? "Hide command panel" : "Open command panel"}
         aria-expanded=${st.dockOpen ? "true" : "false"}
         title="Command panel (\`)"
@@ -120,9 +122,7 @@ export function renderGsResourceBar(
         @click=${() => h.toggleDock()}
       >
         ${gsIcon(st.dockOpen ? "down" : "command", 15)}
-        <span class=${top ? "sm:hidden" : ""}
-          >${st.dockOpen ? "Hide" : "Cmd"}</span
-        >
+        <span>${st.dockOpen ? "Hide" : "Cmd"}</span>
         ${
           st.attention !== "none" && !st.dockOpen
             ? html`<span

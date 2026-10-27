@@ -1,6 +1,7 @@
 import { html, nothing, TemplateResult } from "lit";
 import { GsTab } from "./GsAlerts";
 import { gsIcon, GsIconName } from "./GsIcons";
+import { GS_TAB_DESC } from "./GsLegend";
 
 export interface GsTabDef {
   id: GsTab;
@@ -68,6 +69,12 @@ export interface GsDockOptions {
   subtitle?: TemplateResult | string;
   onTab: (t: GsTab) => void;
   onClose: () => void;
+  /** M7E: the "?" legend is showing instead of the tab body. */
+  legendOpen?: boolean;
+  /** M7E: toggles the legend. */
+  onLegend?: () => void;
+  /** M7E: tab the tutorial points at (pulsing ring). */
+  highlightTab?: GsTab | null;
 }
 
 /**
@@ -98,10 +105,26 @@ export function renderGsDock(
     data-tab=${o.tab}
   >
     <div class="flex min-h-10 items-center gap-2 border-b border-white/10 px-2">
-      <span class="font-bold">${o.title}</span>
+      <span class="font-bold">${o.legendOpen ? "Legend" : o.title}</span>
       <span class="min-w-0 flex-1 truncate text-xs opacity-80"
-        >${o.subtitle ?? ""}</span
+        >${o.legendOpen ? "What every icon means" : (o.subtitle ?? "")}</span
       >
+      ${
+        o.onLegend
+          ? html`<button
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded text-base font-bold ${
+                o.legendOpen ? "bg-blue-800" : "hover:bg-white/10"
+              }"
+              aria-label=${o.legendOpen ? "Close legend" : "Icon legend"}
+              aria-expanded=${o.legendOpen ? "true" : "false"}
+              title="What every icon means"
+              data-testid="gs-legend-toggle"
+              @click=${() => o.onLegend?.()}
+            >
+              ?
+            </button>`
+          : nothing
+      }
       <button
         class="flex h-10 w-10 shrink-0 items-center justify-center rounded hover:bg-white/10"
         aria-label="Minimize"
@@ -111,6 +134,16 @@ export function renderGsDock(
         ${gsIcon("down", 18)}
       </button>
     </div>
+    ${
+      o.legendOpen
+        ? nothing
+        : html`<div
+            class="border-b border-white/5 px-2 py-0.5 text-[11px] leading-snug opacity-70"
+            data-testid="gs-tab-desc"
+          >
+            ${GS_TAB_DESC[o.tab]}
+          </div>`
+    }
     <div
       class="gs-dock-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 text-sm sm:text-xs ${maxH}"
       style=${contentStyle}
@@ -123,17 +156,17 @@ export function renderGsDock(
     >
       ${GS_TABS.map((t) => {
         const m = o.meta[t.id];
-        const active = t.id === o.tab;
+        const active = t.id === o.tab && !o.legendOpen;
         return html`<button
           class="relative flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 text-[10px] leading-none ${
             active
               ? "bg-blue-800 text-white"
               : "text-white/75 hover:bg-white/10"
-          }"
+          } ${o.highlightTab === t.id ? "tutorial-highlight" : ""}"
           role="tab"
           aria-selected=${active ? "true" : "false"}
           aria-label=${t.label}
-          title="${t.label} (${t.key})"
+          title="${t.label} (${t.key}): ${GS_TAB_DESC[t.id]}"
           data-testid="gs-tab-${t.id}"
           @click=${() => o.onTab(t.id)}
         >

@@ -58,6 +58,7 @@ import {
   SendSetLawIntentEvent,
 } from "../../Transport";
 import { GameView } from "../../view";
+import { TutorialHighlight, TutorialHighlightEvent } from "../Tutorial";
 import {
   renderIdeologyChoices,
   renderFaction,
@@ -86,6 +87,7 @@ import {
   GsTabMeta,
   renderGsDock,
 } from "./gs/GsDock";
+import { renderGsLegend } from "./gs/GsLegend";
 import { GsResource, renderGsResourceBar } from "./gs/GsResourceBar";
 
 /** Side dock from this width up; upstream leaves the bottom-left free there. */
@@ -130,6 +132,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   @state() private wearinessRising = false;
   /** Keys of rules hints whose (i) detail is expanded. */
   @state() private infoOpen: ReadonlySet<string> = new Set();
+  /** M7E: the dock shows the icon legend instead of the tab body. */
+  @state() private legendOpen = false;
+  /** M7E: what the in-game tutorial points at in this HUD. */
+  @state() private tutorialHighlight: TutorialHighlight | null = null;
   private nextAlertId = 1;
   /** Players who capitulated to us, by Date.now() of the world message. */
   private readonly capitulations = new Map<string, number>();
@@ -141,7 +147,29 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     return this;
   }
 
-  init() {}
+  init() {
+    this.eventBus?.on(TutorialHighlightEvent, (e) =>
+      this.onTutorialHighlight(e.target),
+    );
+  }
+
+  /**
+   * M7E: the tutorial's grand strategy steps point at the resource bar, the
+   * command toggle or a dock tab; a tab step also opens that tab so the
+   * step text and the tab are on screen together.
+   */
+  onTutorialHighlight(target: TutorialHighlight | null) {
+    this.tutorialHighlight = target;
+    const tab = target?.startsWith("gs_")
+      ? (target.slice(3) as GsTab)
+      : undefined;
+    if (tab !== undefined && GS_TABS.some((t) => t.id === tab)) {
+      this.legendOpen = false;
+      this.tab = tab;
+      this.lastTab = tab;
+      this.detail = null;
+    }
+  }
 
   connectedCallback() {
     super.connectedCallback();
@@ -647,7 +675,17 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const t = tab === null ? null : this.tabTitle(tab, d);
     const bar = renderGsResourceBar(
       this.resources(d),
-      { openDetail: this.detail, dockOpen: tab !== null, attention },
+      {
+        openDetail: this.detail,
+        dockOpen: tab !== null,
+        attention,
+        highlight:
+          this.tutorialHighlight === "gs_resources"
+            ? "bar"
+            : this.tutorialHighlight === "gs_dock"
+              ? "dock"
+              : null,
+      },
       {
         detail: (k) => (this.detail = k),
         toggleDock: () => this.toggleDock(),
@@ -664,12 +702,28 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               bottomInset: this.bottomInset,
               title: t.title,
               subtitle: t.subtitle,
-              onTab: (x) => this.openTab(x),
+              onTab: (x) => {
+                if (this.legendOpen) {
+                  // Leaving the legend opens the tapped tab, never closes it.
+                  this.legendOpen = false;
+                  this.tab = x;
+                  this.lastTab = x;
+                } else {
+                  this.openTab(x);
+                }
+              },
               onClose: () => {
                 this.tab = null;
               },
+              legendOpen: this.legendOpen,
+              onLegend: () => {
+                this.legendOpen = !this.legendOpen;
+              },
+              highlightTab: this.tutorialHighlight?.startsWith("gs_")
+                ? (this.tutorialHighlight.slice(3) as GsTab)
+                : null,
             },
-            this.renderTab(tab, d, state),
+            this.legendOpen ? renderGsLegend() : this.renderTab(tab, d, state),
           )
         : nothing;
     return html`
