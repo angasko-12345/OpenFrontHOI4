@@ -15,6 +15,7 @@ import { DoomsdayClockExecutionSnapshot } from "../execution/DoomsdayClockExecut
 import { EmbargoAllExecutionSnapshot } from "../execution/EmbargoAllExecution";
 import { EmbargoExecutionSnapshot } from "../execution/EmbargoExecution";
 import { EmojiExecutionSnapshot } from "../execution/EmojiExecution";
+import { FactionExecutionSnapshot } from "../execution/FactionExecution";
 import { FactoryExecutionSnapshot } from "../execution/FactoryExecution";
 import { GrandStrategyExecutionSnapshot } from "../execution/GrandStrategyExecution";
 import { GsActionExecutionSnapshot } from "../execution/GsActionExecution";
@@ -96,6 +97,7 @@ export const EXECUTION_SNAPSHOT_TYPES = [
   GsActionExecutionSnapshot,
   JustifyWarExecutionSnapshot,
   PeaceExecutionSnapshot,
+  FactionExecutionSnapshot,
   SAMMissileExecutionSnapshot,
   ShellExecutionSnapshot,
   SpawnExecutionSnapshot,

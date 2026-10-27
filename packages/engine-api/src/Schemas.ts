@@ -48,6 +48,7 @@ export type Intent =
   | SetLawIntent
   | GsActionIntent
   | PeaceIntent
+  | FactionIntent
   | JustifyWarIntent
   | UpgradeStructureIntent
   | DeleteUnitIntent
@@ -65,6 +66,7 @@ export type SetFocusIntent = z.infer<typeof SetFocusIntentSchema>;
 export type SetLawIntent = z.infer<typeof SetLawIntentSchema>;
 export type GsActionIntent = z.infer<typeof GsActionIntentSchema>;
 export type PeaceIntent = z.infer<typeof PeaceIntentSchema>;
+export type FactionIntent = z.infer<typeof FactionIntentSchema>;
 export type JustifyWarIntent = z.infer<typeof JustifyWarIntentSchema>;
 export type CancelBoatIntent = z.infer<typeof CancelBoatIntentSchema>;
 export type AllianceRequestIntent = z.infer<typeof AllianceRequestIntentSchema>;
@@ -520,6 +522,16 @@ export const PeaceIntentSchema = z.object({
   mode: z.enum(["offer", "break"]).optional(),
 });
 
+/**
+ * Grand Strategy (M7C): found a faction, join the faction led by
+ * `targetID`, or leave ours (`targetID` is ignored for found/leave).
+ */
+export const FactionIntentSchema = z.object({
+  type: z.literal("faction"),
+  mode: z.enum(["found", "join", "leave"]),
+  targetID: MappedID,
+});
+
 export const DonateGoldIntentSchema = z.object({
   type: z.literal("donate_gold"),
   recipient: MappedID,
@@ -641,6 +653,7 @@ export const IntentSchema = z.discriminatedUnion("type", [
   ToggleGameStartTimerIntentSchema,
   // Appended: earlier union positions keep their wire tags.
   PeaceIntentSchema,
+  FactionIntentSchema,
 ]);
 
 // StampedIntent = Intent with server-stamped clientID (used in turns and execution)

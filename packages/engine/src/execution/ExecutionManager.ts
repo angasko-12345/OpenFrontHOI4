@@ -20,6 +20,7 @@ import { DonateTroopsExecution } from "./DonateTroopExecution";
 import { EmbargoAllExecution } from "./EmbargoAllExecution";
 import { EmbargoExecution } from "./EmbargoExecution";
 import { EmojiExecution } from "./EmojiExecution";
+import { FactionExecution } from "./FactionExecution";
 import { GsActionExecution } from "./GsActionExecution";
 import { JustifyWarExecution } from "./JustifyWarExecution";
 import { MarkDisconnectedExecution } from "./MarkDisconnectedExecution";
@@ -132,6 +133,8 @@ export class Executor {
           intent.targetID,
           intent.mode ?? "offer",
         );
+      case "faction":
+        return new FactionExecution(player, intent.mode, intent.targetID);
       case "build_unit":
         return new ConstructionExecution(
           player,

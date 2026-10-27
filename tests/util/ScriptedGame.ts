@@ -240,6 +240,8 @@ function queuedIntent(game: Game, p: Player, tick: number): Intent | null {
     { type: "peace", targetID: other.id() },
     { type: "peace", targetID: other.id(), mode: "break" },
     { type: "gs_action", action: "ideology_assembly" },
+    { type: "faction", mode: "found", targetID: other.id() },
+    { type: "faction", mode: "leave", targetID: other.id() },
   ];
   return queued[(tick - 20) / 2] ?? null;
 }

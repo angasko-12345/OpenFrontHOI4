@@ -50,8 +50,28 @@ import {
   steelProductionPermille,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
 import {
+  advanceFactionCalls,
+  AI_FOUND_SHARE,
+  CALL_TO_ARMS_RELATION,
+  canFoundFaction,
+  canJoinFaction,
+  type Faction,
+  FACTION_CREATE_PP,
+  FACTION_DISSOLVE_SHARE,
+  FACTION_AI_PERIOD,
+  FACTION_RENEW_TICKS,
+  factionCap,
+  type FactionCheck,
+  factionName,
+  factionOf,
+  leaveFaction,
+  mayCallToArms,
+  recordCall,
+} from "@openfront/engine-lib/game/GrandStrategyFaction";
+import {
   aiBreakBias,
   aiPeaceBias,
+  DEFAULT_IDEOLOGY,
   ideologyDef,
   ideologyOfAction,
   justifyCostFor,
@@ -196,7 +216,7 @@ export class GrandStrategyExecution implements Execution {
    * "weariness" = M7 stage A (war weariness, capitulation, peace, truces),
    * "ideology" = M7 stage B (no ideology changes; everyone non-aligned),
    * "revanche" = M7C stage 2 (no revanche claims, recovery or revanche
-   * breaks).
+   * breaks), "faction" = M7C stage 3 (no factions).
    */
   private ablated?: Set<string>;
 
@@ -209,7 +229,8 @@ export class GrandStrategyExecution implements Execution {
       | "atomic"
       | "weariness"
       | "ideology"
-      | "revanche",
+      | "revanche"
+      | "faction",
   ): void {
     (this.ablated ??= new Set()).add(part);
   }
@@ -224,6 +245,8 @@ export class GrandStrategyExecution implements Execution {
   private coalitionLeader: number | null = null;
   /** M7 stage A: wars, truces, peace offers and peak land, by small id. */
   private peace = new Map<number, NationPeaceState>();
+  /** M7C stage 3: factions (absent on restored pre-v13 instances = none). */
+  private factions?: Faction[];
 
   init(mg: Game, _ticks: number): void {
     this.attach(mg);
@@ -510,6 +533,333 @@ export class GrandStrategyExecution implements Execution {
     return "broken";
   }
 
+  // ---- M7C stage 3: factions ----
+
+  private factionsOn(): boolean {
+    return (
+      this.on("faction") &&
+      this.on("ideology") &&
+      this.mg !== null &&
+      !this.mg.config().disableAlliances()
+    );
+  }
+
+  factionList(): readonly Faction[] {
+    return this.factions ?? [];
+  }
+
+  factionOfPlayer(p: Player): Faction | undefined {
+    return factionOf(this.factions ?? [], p.smallID());
+  }
+
+  private livePlayer(id: number): Player | null {
+    const p = this.mg?.playerBySmallID(id);
+    return p !== undefined && p.isPlayer() && (p as Player).isAlive()
+      ? (p as Player)
+      : null;
+  }
+
+  /** Land share of a set of small ids, per-mille of the world's land. */
+  private shareOf(ids: readonly number[]): number {
+    const mg = this.mg!;
+    let tiles = 0;
+    for (const id of ids) tiles += this.livePlayer(id)?.numTilesOwned() ?? 0;
+    return Math.floor((tiles * 1000) / Math.max(1, mg.numLandTiles()));
+  }
+
+  private nationsAlive(): number {
+    return this.mg!.players().filter(
+      (p) => p.type() !== PlayerType.Bot && p.isAlive(),
+    ).length;
+  }
+
+  /** Found a faction (needs an ideology and FACTION_CREATE_PP). */
+  foundFaction(player: Player): FactionCheck {
+    if (!this.factionsOn()) return "disabled";
+    if (player.type() === PlayerType.Bot || !player.isAlive()) {
+      return "disabled";
+    }
+    const s = this.stateOf(player)!;
+    const check = canFoundFaction({
+      ideology: s.ideology,
+      politicalPower: s.politicalPower,
+      inFaction: this.factionOfPlayer(player) !== undefined,
+      share: this.shareOf([player.smallID()]),
+      factions: (this.factions ?? []).length,
+      nations: this.nationsAlive(),
+    });
+    if (check !== "ok") return check;
+    s.politicalPower -= FACTION_CREATE_PP;
+    (this.factions ??= []).push({
+      leader: player.smallID(),
+      members: [player.smallID()],
+      calls: [],
+    });
+    this.factionMessage("events_display.gs_faction_created", player, player);
+    return "ok";
+  }
+
+  /** Whether `player` may join the faction led by `leader` now. */
+  joinCheck(player: Player, leader: Player): FactionCheck {
+    if (!this.factionsOn()) return "disabled";
+    const f = (this.factions ?? []).find((x) => x.leader === leader.smallID());
+    if (f === undefined) return "no_faction";
+    if (player.type() === PlayerType.Bot || !player.isAlive()) {
+      return "disabled";
+    }
+    const mine = this.peaceOf(player)!;
+    const check = canJoinFaction({
+      ideology: this.states.get(player.smallID())?.ideology,
+      leaderIdeology: this.states.get(f.leader)?.ideology,
+      inFaction: this.factionOfPlayer(player) !== undefined,
+      members: f.members.length,
+      nations: this.nationsAlive(),
+      leaderShare: this.shareOf([f.leader]),
+      factionShare: this.shareOf(f.members),
+      share: this.shareOf([player.smallID()]),
+      atWarWithMember: f.members.some((m) => enemyEntry(mine, m) !== undefined),
+    });
+    if (check !== "ok") return check;
+    for (const m of f.members) {
+      const mp = this.livePlayer(m);
+      if (mp === null) continue;
+      if (!player.isAlliedWith(mp) && !player.canSendAllianceRequest(mp)) {
+        return "alliance_blocked";
+      }
+    }
+    return "ok";
+  }
+
+  /**
+   * Join the faction led by `leader`: forms an upstream alliance with
+   * every member that is not an ally yet (request + accept).
+   */
+  joinFaction(player: Player, leader: Player): FactionCheck {
+    const check = this.joinCheck(player, leader);
+    if (check !== "ok") return check;
+    const f = this.factions!.find((x) => x.leader === leader.smallID())!;
+    for (const m of f.members) {
+      const mp = this.livePlayer(m);
+      if (mp === null || player.isAlliedWith(mp)) continue;
+      player.createAllianceRequest(mp)?.accept();
+      if (!player.isAlliedWith(mp)) return "alliance_blocked";
+    }
+    f.members.push(player.smallID());
+    this.factionMessage("events_display.gs_faction_joined", player, leader);
+    return "ok";
+  }
+
+  /** Leave one's faction (alliances run out on their own; no traitor). */
+  leaveFaction(player: Player): FactionCheck {
+    if (!this.factionsOn()) return "disabled";
+    const f = this.factionOfPlayer(player);
+    if (f === undefined) return "no_faction";
+    const leader = this.livePlayer(f.leader) ?? player;
+    this.factions = leaveFaction(this.factions!, player.smallID());
+    this.factionMessage("events_display.gs_faction_left", player, leader);
+    return "ok";
+  }
+
+  private factionMessage(key: string, p: Player, leader: Player): void {
+    this.mg?.displayMessage(
+      key,
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      { name: p.displayName(), faction: factionName(leader.displayName()) },
+      undefined,
+      p.id(),
+    );
+  }
+
+  /**
+   * A member lost land to an outsider: the rest of its faction gets a war
+   * goal on the attacker and turns hostile to it; an AI defender marks it
+   * as its target so upstream allies assist. Bounded by mayCallToArms.
+   */
+  private callToArms(attacker: Player, defender: Player): void {
+    const f = this.factionOfPlayer(defender);
+    if (f === undefined || f.members.includes(attacker.smallID())) return;
+    if (!mayCallToArms(f, attacker.smallID(), this.shareOf(f.members))) return;
+    recordCall(f, attacker.smallID());
+    for (const m of f.members) {
+      if (m === defender.smallID()) continue;
+      const mp = this.livePlayer(m);
+      if (mp === null) continue;
+      if (this.warLayer)
+        grantDefensiveGoal(this.warOf(mp)!, attacker.smallID());
+      if (mp.type() === PlayerType.Nation) {
+        mp.updateRelation(attacker, CALL_TO_ARMS_RELATION);
+      }
+      if (mp.type() === PlayerType.Human) {
+        this.mg?.displayMessage(
+          "events_display.gs_call_to_arms",
+          MessageType.GS_DIPLOMACY,
+          mp.id(),
+          undefined,
+          { name: defender.displayName(), other: attacker.displayName() },
+          undefined,
+          defender.id(),
+        );
+      }
+    }
+    if (defender.type() === PlayerType.Nation && defender.canTarget(attacker)) {
+      defender.target(attacker);
+    }
+  }
+
+  /**
+   * Once a second: drop dead or un-allied members, break up factions that
+   * grew too big, renew nation-nation alliances inside a faction, then let
+   * AI nations found, join or leave.
+   */
+  private factionSecond(mg: Game, players: readonly Player[]): void {
+    let list = this.factions ?? [];
+    for (const f of [...list]) {
+      for (const m of [...f.members]) {
+        if (this.livePlayer(m) === null) list = leaveFaction(list, m);
+      }
+    }
+    // Every pair must stay allied: the later joiner of a broken pair goes.
+    for (const f of [...list]) {
+      const cur = list.find((x) => x.leader === f.leader);
+      if (cur === undefined) continue;
+      for (let j = cur.members.length - 1; j > 0; j--) {
+        const pj = this.livePlayer(cur.members[j]);
+        if (pj === null) continue;
+        const broken = cur.members.slice(0, j).some((m) => {
+          const pm = this.livePlayer(m);
+          return pm !== null && !pj.isAlliedWith(pm);
+        });
+        if (broken) {
+          list = leaveFaction(list, cur.members[j]);
+          this.factions = list;
+          this.factionMessage(
+            "events_display.gs_faction_left",
+            pj,
+            this.livePlayer(cur.leader) ?? pj,
+          );
+          break;
+        }
+      }
+    }
+    const land = Math.max(1, mg.numLandTiles());
+    for (const f of [...list]) {
+      if (this.shareOf(f.members) > FACTION_DISSOLVE_SHARE) {
+        const leader = this.livePlayer(f.leader);
+        list = list.filter((x) => x !== f);
+        if (leader !== null) {
+          this.factions = list;
+          this.factionMessage(
+            "events_display.gs_faction_dissolved",
+            leader,
+            leader,
+          );
+        }
+      }
+    }
+    this.factions = list;
+    for (const f of list) {
+      advanceFactionCalls(f);
+      for (let i = 0; i < f.members.length; i++) {
+        const a = this.livePlayer(f.members[i]);
+        if (a === null || a.type() !== PlayerType.Nation) continue;
+        for (let j = i + 1; j < f.members.length; j++) {
+          const b = this.livePlayer(f.members[j]);
+          if (b === null || b.type() !== PlayerType.Nation) continue;
+          const al = a.allianceWith(b);
+          if (
+            al !== null &&
+            al.expiresAt() - mg.ticks() < FACTION_RENEW_TICKS
+          ) {
+            al.extend();
+          }
+        }
+      }
+    }
+    const second = Math.floor(mg.ticks() / 10);
+    for (const p of players) {
+      if (p.type() !== PlayerType.Nation || !p.isAlive()) continue;
+      if ((second + p.smallID()) % FACTION_AI_PERIOD !== 0) continue;
+      this.aiFaction(p, land);
+    }
+  }
+
+  /** AI: leave a faction led by the coalition target; else join, else found. */
+  private aiFaction(p: Player, land: number): void {
+    const f = this.factionOfPlayer(p);
+    if (f !== undefined) {
+      if (
+        this.warLayer &&
+        f.leader !== p.smallID() &&
+        f.leader === this.coalitionLeader
+      ) {
+        this.leaveFaction(p);
+      }
+      return;
+    }
+    const s = this.stateOf(p)!;
+    if (ideologyDef(s.ideology).id === DEFAULT_IDEOLOGY) return;
+    const leaders = (this.factions ?? [])
+      .map((x) => x.leader)
+      .sort((x, y) => x - y);
+    for (const id of leaders) {
+      const leader = this.livePlayer(id);
+      if (leader === null) continue;
+      if (this.joinFaction(p, leader) === "ok") return;
+    }
+    const share = Math.floor((p.numTilesOwned() * 1000) / land);
+    if (share >= AI_FOUND_SHARE[aiPersonalityFor(p.smallID())]) {
+      this.foundFaction(p);
+    }
+  }
+
+  /** HUD view of factions: ours, and the ones we could join. */
+  private factionUpdate(p: Player) {
+    if (!this.factionsOn()) return {};
+    const mg = this.mg!;
+    const idOf = (small: number) => {
+      const t = mg.playerBySmallID(small);
+      return t.isPlayer() ? (t as Player).id() : "";
+    };
+    const mine = this.factionOfPlayer(p);
+    const nations = this.nationsAlive();
+    return {
+      faction:
+        mine === undefined
+          ? null
+          : {
+              leader: idOf(mine.leader),
+              members: mine.members.map(idOf),
+              cap: factionCap(nations),
+              share: this.shareOf(mine.members),
+            },
+      factions: [...(this.factions ?? [])]
+        .sort((x, y) => x.leader - y.leader)
+        .map((x) => {
+          const leader = this.livePlayer(x.leader);
+          return {
+            leader: idOf(x.leader),
+            ideology: ideologyDef(this.states.get(x.leader)?.ideology).id,
+            members: x.members.length,
+            share: this.shareOf(x.members),
+            join:
+              mine !== undefined || leader === null
+                ? ("in_faction" as FactionCheck)
+                : this.joinCheck(p, leader),
+          };
+        }),
+      canFound: canFoundFaction({
+        ideology: this.states.get(p.smallID())?.ideology,
+        politicalPower: this.states.get(p.smallID())?.politicalPower ?? 0,
+        inFaction: mine !== undefined,
+        share: this.shareOf([p.smallID()]),
+        factions: (this.factions ?? []).length,
+        nations,
+      }),
+    };
+  }
+
   coalitionLeaderId(): number | null {
     return this.coalitionLeader;
   }
@@ -563,6 +913,13 @@ export class GrandStrategyExecution implements Execution {
       if (this.on("revanche")) {
         payRevanche(this.peaceOf(attacker)!, defender.smallID(), tiles);
       }
+    }
+    if (
+      this.factionsOn() &&
+      attacker.type() !== PlayerType.Bot &&
+      defender.type() !== PlayerType.Bot
+    ) {
+      this.callToArms(attacker, defender);
     }
     if (!this.warLayer) return;
     const w = this.warOf(attacker);
@@ -778,6 +1135,7 @@ export class GrandStrategyExecution implements Execution {
     const humanUpdates: GrandStrategyUpdate[] = [];
     const knownBy = this.on("research") ? this.techSpread(players) : () => 0;
     if (this.on("weariness")) this.diplomacySecond(mg, players);
+    if (this.factionsOn()) this.factionSecond(mg, players);
     for (const p of players) {
       if (p.type() === PlayerType.Bot) continue;
       const s = this.stateOf(p)!;
@@ -927,6 +1285,7 @@ export class GrandStrategyExecution implements Execution {
         ideology: ideologyDef(s.ideology).id,
         ideologyCooldown: s.ideologyCooldown ?? 0,
         ...this.peaceUpdate(mg, p),
+        ...this.factionUpdate(p),
       });
     }
     if (humanUpdates.length > 0) {
@@ -1346,6 +1705,11 @@ export class GrandStrategyExecution implements Execution {
         ...peaceSnapshot(this.peace.get(id)),
       })),
       coalitionLeader: this.coalitionLeader,
+      factions: (this.factions ?? []).map((f) => ({
+        leader: f.leader,
+        members: [...f.members],
+        calls: f.calls.map((c) => ({ ...c })),
+      })),
     });
   }
 
@@ -1411,6 +1775,11 @@ export class GrandStrategyExecution implements Execution {
       ]),
     );
     this.coalitionLeader = s.coalitionLeader;
+    this.factions = s.factions.map((f) => ({
+      leader: f.leader,
+      members: [...f.members],
+      calls: f.calls.map((c) => ({ ...c })),
+    }));
     if (s.initialized) this.attach(r.game);
   }
 }
@@ -1525,14 +1894,26 @@ const GrandStrategyStateSchema = z.object({
     }),
   ),
   coalitionLeader: zInt().nullable(),
+  factions: z.array(
+    z.object({
+      leader: zInt(),
+      members: z.array(zInt()),
+      calls: z.array(TimedTargetSchema),
+    }),
+  ),
 });
 type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 12,
+  version: 13,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v13 added factions (M7C stage 3): none yet.
+    12: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      factions: [],
+    }),
     // v12 added revanche claims and recovery (M7C stage 2): none yet.
     11: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

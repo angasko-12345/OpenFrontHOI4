@@ -226,6 +226,23 @@ export interface GrandStrategyUpdate {
   revanche?: { target: string; tiles: number; seconds: number; wait: number }[];
   /** M7C stage 2: rallying after a lost war (truce with a claim holds). */
   recovering?: boolean;
+  /** M7C stage 3: our faction (share per-mille of world land). */
+  faction?: {
+    leader: string;
+    members: string[];
+    cap: number;
+    share: number;
+  } | null;
+  /** M7C stage 3: every faction, with whether we may join it ("ok"). */
+  factions?: {
+    leader: string;
+    ideology: string;
+    members: number;
+    share: number;
+    join: string;
+  }[];
+  /** M7C stage 3: whether we may found a faction ("ok") or why not. */
+  canFound?: string;
 }
 
 export interface BonusEventUpdate {
