@@ -134,4 +134,25 @@ describe("diffGsAlerts", () => {
     expect(a).toHaveLength(1);
     expect(a[0].text).toBe("2 nations started atomic projects");
   });
+
+  it("reports a truce that vanishes early as broken, not one that ran out", () => {
+    const t = (seconds: number) => [{ target: "a", seconds, lock: 0 }];
+    const broken = diffGsAlerts(upd({ truces: t(90) }), upd(), name);
+    expect(broken.map((x) => [x.kind, x.text])).toEqual([
+      ["trucebroken", "Truce with N-a broken"],
+    ]);
+    expect(diffGsAlerts(upd({ truces: t(1) }), upd(), name)).toEqual([]);
+  });
+
+  it("reports our ideology change", () => {
+    const a = diffGsAlerts(
+      upd(),
+      upd({ ideology: "assembly", ideologyCooldown: 300 }),
+      name,
+    );
+    expect(a).toHaveLength(1);
+    expect(a[0].kind).toBe("ideology");
+    expect(a[0].tab).toBe("decisions");
+    expect(diffGsAlerts(upd(), upd({ ideologyCooldown: 5 }), name)).toEqual([]);
+  });
 });

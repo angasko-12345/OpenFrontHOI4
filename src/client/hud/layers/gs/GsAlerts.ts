@@ -1,5 +1,6 @@
 import { GrandStrategyUpdate } from "@openfront/engine-api/game/GameUpdates";
 import { focusById } from "@openfront/engine-lib/game/GrandStrategy";
+import { ideologyDef } from "@openfront/engine-lib/game/GrandStrategyIdeology";
 import {
   ATOMIC_PROJECT,
   techById,
@@ -20,6 +21,8 @@ export type GsAlertKind =
   | "war"
   | "peace"
   | "truce"
+  | "trucebroken"
+  | "ideology"
   | "capitulation"
   | "research"
   | "focus"
@@ -50,6 +53,8 @@ export const ALERT_MS: Record<GsAlertKind, number> = {
   war: 10_000,
   peace: 60_000,
   truce: 10_000,
+  trucebroken: 12_000,
+  ideology: 8_000,
   capitulation: 15_000,
   research: 8_000,
   focus: 8_000,
@@ -132,6 +137,32 @@ export function diffGsAlerts(
         target: t,
       });
     }
+  }
+  // A truce that vanishes with time still left on it was broken (by us or
+  // by them); one that ran out counts down to its last second first.
+  const nextTruces = new Set(ids(next.truces));
+  for (const t of prev.truces ?? []) {
+    if (t.seconds > 2 && !nextTruces.has(t.target)) {
+      out.push({
+        kind: "trucebroken",
+        text: `Truce with ${nameOf(t.target)} broken`,
+        tab: "war",
+        tone: "danger",
+        target: t.target,
+      });
+    }
+  }
+  if (
+    prev.ideology !== undefined &&
+    next.ideology !== undefined &&
+    next.ideology !== prev.ideology
+  ) {
+    out.push({
+      kind: "ideology",
+      text: `New ideology: ${ideologyDef(next.ideology).name}`,
+      tab: "decisions",
+      tone: "info",
+    });
   }
   for (const t of added(prev.justifiedAgainstMe, next.justifiedAgainstMe)) {
     out.push({
@@ -238,6 +269,8 @@ const KIND_ICON: Record<GsAlertKind, GsIconName> = {
   war: "war",
   peace: "peace",
   truce: "peace",
+  trucebroken: "war",
+  ideology: "decisions",
   capitulation: "war",
   research: "research",
   focus: "focus",
