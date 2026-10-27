@@ -425,7 +425,7 @@ describe("GrandStrategyExecution edge cases", () => {
 });
 
 describe("GrandStrategy snapshot migration", () => {
-  test("v1 records migrate through v10 with defaults", () => {
+  test("v1 records migrate through v11 with defaults", () => {
     const m = GrandStrategyExecutionSnapshot.migrations;
     const v2 = m[1]({
       initialized: true,
@@ -441,7 +441,7 @@ describe("GrandStrategy snapshot migration", () => {
       ],
     });
     const parsed = GrandStrategyExecutionSnapshot.schema.parse(
-      m[9](m[8](m[7](m[6](m[5](m[4](m[3](m[2](v2)))))))),
+      m[10](m[9](m[8](m[7](m[6](m[5](m[4](m[3](m[2](v2))))))))),
     );
     expect(parsed.coalitionLeader).toBeNull();
     expect(parsed.states[0].steelDeposits).toBe(0);
@@ -452,6 +452,8 @@ describe("GrandStrategy snapshot migration", () => {
     expect(parsed.states[0].occupied).toBe(0);
     expect(parsed.states[0].warGoals).toEqual([]);
     expect(parsed.states[0].weariness).toBe(0);
+    expect(parsed.states[0].ideology).toBe("nonaligned");
+    expect(parsed.states[0].ideologyCooldown).toBe(0);
     expect(parsed.states[0].peakTiles).toBe(0);
     expect(parsed.states[0].enemies).toEqual([]);
     expect(parsed.states[0].truces).toEqual([]);

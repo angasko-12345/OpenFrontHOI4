@@ -335,7 +335,11 @@ describe("decisions and advisors", () => {
     s.politicalPower = 500_000;
     const c = aiChoose(s, "militarist");
     expect(c.law).toBeNull();
-    expect(c.action).toBe("army_chief");
+    // M7 stage B: its ideology first (without ideologies: the advisor).
+    expect(c.action).toBe("ideology_directorate");
+    expect(aiChoose(s, "militarist", false).action).toBe("army_chief");
+    s.ideology = "directorate";
+    expect(aiChoose(s, "militarist").action).toBe("army_chief");
   });
 });
 
