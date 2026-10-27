@@ -56,7 +56,7 @@ export const CAPITULATE_MIN_PEAK_PERMILLE = 5;
 export const TRUCE_MIN_LOCK = 120;
 export const TRUCE_MAX_LOCK = 480;
 /** Base lock after a negotiated peace and after a capitulation. */
-export const TRUCE_PEACE_BASE = 180;
+export const TRUCE_PEACE_BASE = 120;
 export const TRUCE_CAPITULATION_BASE = 300;
 /** Extra lock when the loser lost all of its peak land (scaled by share). */
 export const TRUCE_LAND_SECONDS = 180;
