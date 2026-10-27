@@ -29,7 +29,8 @@ export type GsAlertKind =
   | "atomic"
   | "wargoal"
   | "coalition"
-  | "revanche";
+  | "revanche"
+  | "faction";
 
 export type GsAlertTone = "danger" | "good" | "warn" | "info";
 
@@ -63,6 +64,7 @@ export const ALERT_MS: Record<GsAlertKind, number> = {
   wargoal: 12_000,
   coalition: 15_000,
   revanche: 12_000,
+  faction: 10_000,
 };
 
 export const MAX_ALERTS = 4;
@@ -176,6 +178,41 @@ export function diffGsAlerts(
         tone: "warn",
         target: r.target,
       });
+    }
+  }
+  // M7C stage 3: faction membership.
+  const pf = prev.faction ?? null;
+  const nf = next.faction ?? null;
+  if (prev.factions !== undefined && next.factions !== undefined) {
+    if (pf === null && nf !== null) {
+      out.push({
+        kind: "faction",
+        text:
+          nf.leader === next.player
+            ? "We founded a faction"
+            : `We joined ${nameOf(nf.leader)}'s faction`,
+        tab: "war",
+        tone: "good",
+        target: nf.leader,
+      });
+    } else if (pf !== null && nf === null) {
+      out.push({
+        kind: "faction",
+        text: "We are no longer in a faction",
+        tab: "war",
+        tone: "warn",
+      });
+    } else if (pf !== null && nf !== null) {
+      for (const m of added(pf.members, nf.members)) {
+        if (m === next.player) continue;
+        out.push({
+          kind: "faction",
+          text: `${nameOf(m)} joined our faction`,
+          tab: "war",
+          tone: "good",
+          target: m,
+        });
+      }
     }
   }
   if (
@@ -304,6 +341,7 @@ const KIND_ICON: Record<GsAlertKind, GsIconName> = {
   wargoal: "war",
   coalition: "war",
   revanche: "war",
+  faction: "peace",
 };
 
 export interface GsAlertHandlers {

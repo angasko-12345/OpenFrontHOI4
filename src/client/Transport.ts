@@ -206,6 +206,14 @@ export class SendPeaceIntentEvent implements GameEvent {
   ) {}
 }
 
+/** Grand Strategy (M7C): found, join (`targetID` = leader) or leave a faction. */
+export class SendFactionIntentEvent implements GameEvent {
+  constructor(
+    public readonly mode: "found" | "join" | "leave",
+    public readonly targetID: PlayerID,
+  ) {}
+}
+
 export class SendEmbargoAllIntentEvent implements GameEvent {
   constructor(public readonly action: "start" | "stop") {}
 }
@@ -375,6 +383,9 @@ export class Transport {
           ? { type: "peace", targetID: e.targetID, mode: "break" }
           : { type: "peace", targetID: e.targetID },
       ),
+    );
+    this.subscribe(SendFactionIntentEvent, (e) =>
+      this.sendIntent({ type: "faction", mode: e.mode, targetID: e.targetID }),
     );
     this.subscribe(SendEmbargoAllIntentEvent, (e) =>
       this.onSendEmbargoAllIntent(e),

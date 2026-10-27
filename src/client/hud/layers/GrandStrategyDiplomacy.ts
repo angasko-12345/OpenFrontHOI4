@@ -1,6 +1,10 @@
 import { GsActionID } from "@openfront/engine-api/game/GameTypes";
 import { GrandStrategyUpdate } from "@openfront/engine-api/game/GameUpdates";
 import {
+  FACTION_CREATE_PP,
+  factionName,
+} from "@openfront/engine-lib/game/GrandStrategyFaction";
+import {
   canAdoptIdeology,
   IDEOLOGIES,
   IDEOLOGY_COST,
@@ -264,4 +268,123 @@ export function renderIdeologyChoices(
       truces with each other.
     </div>
   </div>`;
+}
+
+/** Short reason a faction action is unavailable. */
+const FACTION_REASON: Record<string, string> = {
+  disabled: "Unavailable",
+  in_faction: "In a faction",
+  no_faction: "Gone",
+  no_ideology: "Needs an ideology",
+  ideology: "Other ideology",
+  no_political_power: `Needs ${FACTION_CREATE_PP / 1000} PP`,
+  too_many: "Too many factions",
+  full: "Full",
+  leader_too_big: "Leader too big",
+  too_big: "Too big",
+  at_war: "At war",
+  alliance_blocked: "Can't ally",
+};
+
+/**
+ * M7C stage 3, War tab: our faction (members, Leave) or a Found button
+ * and the factions we could join.
+ */
+export function renderFaction(
+  d: GrandStrategyUpdate,
+  name: (id: string) => string,
+  on: {
+    found: () => void;
+    join: (leader: string) => void;
+    leave: () => void;
+  },
+) {
+  if (d.factions === undefined) return nothing;
+  const f = d.faction ?? null;
+  const btn = (enabled: boolean) =>
+    `min-h-10 shrink-0 rounded px-3 sm:min-h-0 sm:px-2 ${
+      enabled ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-900/60 text-gray-500"
+    }`;
+  if (f !== null) {
+    return html`<div data-testid="gs-faction">
+      <div class="flex items-center justify-between gap-2">
+        <span class="min-w-0 truncate font-semibold"
+          >${factionName(name(f.leader))}
+          <span class="font-normal opacity-70"
+            >${f.members.length}/${f.cap} · ${Math.floor(f.share / 10)}%</span
+          ></span
+        >
+        <button
+          class=${btn(true)}
+          data-testid="gs-faction-leave"
+          @click=${() => on.leave()}
+        >
+          Leave
+        </button>
+      </div>
+      <div class="truncate opacity-80" data-testid="gs-faction-members">
+        ${f.members
+          .map((m, i) => (i === 0 ? `★ ${name(m)}` : name(m)))
+          .join(" · ")}
+      </div>
+    </div>`;
+  }
+  const canFound = d.canFound === "ok";
+  return html`<div data-testid="gs-faction">
+    <div class="flex items-center justify-between gap-2">
+      <span class="font-semibold">Faction</span>
+      <button
+        class=${btn(canFound)}
+        ?disabled=${!canFound}
+        data-testid="gs-faction-found"
+        @click=${() => on.found()}
+      >
+        ${
+          canFound
+            ? `Found (${FACTION_CREATE_PP / 1000} PP)`
+            : (FACTION_REASON[d.canFound ?? "disabled"] ?? "Found")
+        }
+      </button>
+    </div>
+    ${d.factions.map(
+      (x) =>
+        html`<div
+          class="flex items-center justify-between gap-2"
+          data-testid="gs-faction-row"
+        >
+          <span class="min-w-0 truncate"
+            >${factionName(name(x.leader))}
+            <span class="opacity-70"
+              >${ideologyDef(x.ideology).name} · ${x.members} ·
+              ${Math.floor(x.share / 10)}%</span
+            ></span
+          >
+          ${
+            x.join === "ok"
+              ? html`<button
+                  class=${btn(true)}
+                  data-testid="gs-faction-join"
+                  @click=${() => on.join(x.leader)}
+                >
+                  Join
+                </button>`
+              : html`<span class="shrink-0 text-[11px] opacity-60"
+                  >${FACTION_REASON[x.join] ?? x.join}</span
+                >`
+          }
+        </div>`,
+    )}
+  </div>`;
+}
+
+/** Rules note for factions (behind the War tab's (i)). */
+export function factionRulesNote(): string {
+  return (
+    `Factions: nations of one ideology, all allied. Founding costs ` +
+    `${FACTION_CREATE_PP / 1000} PP. When a member loses land, the others get ` +
+    `a war goal on the attacker (call to arms). Size is capped by the number ` +
+    `of nations; a leader over 25% of the world cannot take members, no join ` +
+    `may push a faction past 40%, no calls to arms above 35%, and a faction ` +
+    `over 50% breaks up.`
+  );
 }

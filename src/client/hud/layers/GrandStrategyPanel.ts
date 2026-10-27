@@ -51,6 +51,7 @@ import { Controller } from "../../Controller";
 import {
   SendGsActionIntentEvent,
   SendJustifyWarIntentEvent,
+  SendFactionIntentEvent,
   SendPeaceIntentEvent,
   SendSetFocusIntentEvent,
   SendSetLawIntentEvent,
@@ -58,8 +59,10 @@ import {
 import { GameView } from "../../view";
 import {
   renderIdeologyChoices,
+  renderFaction,
   renderIdeologyRow,
   renderInfoHint,
+  factionRulesNote,
   renderTruces,
   revancheRulesNote,
   truceRulesNote,
@@ -329,6 +332,12 @@ export class GrandStrategyPanel extends LitElement implements Controller {
 
   private breakTruce(id: PlayerID) {
     this.eventBus.emit(new SendPeaceIntentEvent(id, "break"));
+  }
+
+  private faction(mode: "found" | "join" | "leave", leader?: PlayerID) {
+    const me = this.game.myPlayer()?.id();
+    if (me === undefined) return;
+    this.eventBus.emit(new SendFactionIntentEvent(mode, leader ?? me));
   }
 
   private name(id: string): string {
@@ -1223,7 +1232,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         and cuts political power and war support. Below
         ${CAPITULATE_PERMILLE / 10}% of your peak land (${d.peakTiles ?? 0}
         tiles) while at war you capitulate. ${truceRulesNote()}
-        ${revancheRulesNote()}`,
+        ${revancheRulesNote()} ${factionRulesNote()}`,
       )}
     </div>`;
   }
@@ -1255,6 +1264,11 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           : nothing
       }
       ${this.renderPeace(d)}
+      ${renderFaction(d, (id) => this.name(id), {
+        found: () => this.faction("found"),
+        join: (id) => this.faction("join", id),
+        leave: () => this.faction("leave"),
+      })}
       ${this.info(
         "justify",
         `No war goal: +20% losses. Justify: ${JUSTIFY_SECONDS}s, ${JUSTIFY_COST / 1000} PP.`,
