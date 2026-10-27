@@ -54,7 +54,12 @@ import {
   SendSetLawIntentEvent,
 } from "../../Transport";
 import { GameView } from "../../view";
-import { renderTruces, truceRulesNote } from "./GrandStrategyDiplomacy";
+import {
+  renderIdeologyChoices,
+  renderIdeologyRow,
+  renderTruces,
+  truceRulesNote,
+} from "./GrandStrategyDiplomacy";
 
 /**
  * Grand Strategy HUD: the local nation's military industry, equipment
@@ -208,6 +213,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       researched: d.researched,
       research: d.research.map((r) => ({ id: r.id, progress: r.progress })),
       weariness: (d.weariness ?? 0) * 1000,
+      ideology: d.ideology,
+      ideologyCooldown: d.ideologyCooldown,
     };
     const canAffordLaw = d.politicalPower * 1000 >= LAW_CHANGE_COST;
     const current = d.focus === null ? undefined : focusById(d.focus);
@@ -365,6 +372,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
             data-testid="gs-weariness"
             >${pct(d.weariness ?? 0)}</span
           >
+          ${renderIdeologyRow(d)}
           <span>Civ. factories</span>
           <span class="text-right">${d.civFree} free / ${d.civFactories}</span>
           ${
@@ -502,6 +510,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         ${
           this.section === "decisions"
             ? html`<div class="mt-2 space-y-2">
+                ${renderIdeologyChoices(d, (id) => this.act(id))}
                 <div>
                   <div class="font-semibold">Decisions</div>
                   ${DECISIONS.map((dec) => {
