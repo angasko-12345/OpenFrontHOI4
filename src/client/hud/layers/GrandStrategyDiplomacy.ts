@@ -296,6 +296,7 @@ const FACTION_REASON: Record<string, string> = {
   too_big: "Too big",
   at_war: "At war",
   alliance_blocked: "Can't ally",
+  puppet: "Puppets can't",
 };
 
 /**
@@ -465,10 +466,7 @@ export function renderPuppets(
           >
             <div class="flex items-center justify-between gap-2">
               <span class="min-w-0 truncate"
-                >Puppet of <b>${name(overlord)}</b>
-                <span class="opacity-70"
-                  >· tribute ${Math.floor((d.tribute ?? 0) / 10)}%</span
-                ></span
+                >Puppet of <b>${name(overlord)}</b></span
               >
               <button
                 class=${btn(free, "bg-sky-700 hover:bg-sky-600")}
@@ -487,7 +485,8 @@ export function renderPuppets(
             </div>
             <div class="flex items-center gap-2">
               <span class="shrink-0 opacity-70"
-                >Autonomy ${Math.floor((d.autonomy ?? 0) / 10)}%</span
+                >Autonomy ${Math.floor((d.autonomy ?? 0) / 10)}% · tribute
+                ${Math.floor((d.tribute ?? 0) / 10)}%</span
               >
               ${bar(d.autonomy ?? 0, "gs-autonomy-bar")}
             </div>

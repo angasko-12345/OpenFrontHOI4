@@ -42,9 +42,9 @@ describe("GS puppet HUD", () => {
       puppets: [],
       puppetWindows: [],
     });
-    expect(el.textContent).toContain("Puppet of N-o");
-    expect(el.textContent).toContain("tribute 18%");
-    expect(el.textContent).toContain("Autonomy 42%");
+    const text = el.textContent?.replace(/\s+/g, " ") ?? "";
+    expect(text).toContain("Puppet of N-o");
+    expect(text).toContain("Autonomy 42% · tribute 18%");
     const bar = el.querySelector('[data-testid="gs-autonomy-bar"]')!;
     expect(bar.getAttribute("aria-valuenow")).toBe("42");
     const btn = q(el, "gs-independence")!;
