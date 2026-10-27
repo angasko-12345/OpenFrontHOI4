@@ -91,20 +91,24 @@ export function renderGsDock(
   const pos = o.wide
     ? "relative w-full rounded-lg"
     : "fixed inset-x-0 sm:inset-x-auto sm:left-2 sm:w-[440px] sm:rounded-t-lg rounded-t-lg";
-  const style = o.wide ? "" : `bottom:${Math.max(0, o.bottomInset)}px`;
-  const maxH = o.wide ? "max-h-[min(560px,calc(100vh-470px))]" : "";
-  // Phones: the whole sheet (header 40px + tabs 48px + content) stays in
-  // the lower half, above the control panel, so the map centre is clear.
-  const contentStyle = o.wide
+  // Phones: the whole sheet (header, tab description, content, tabs) is
+  // capped so it stays in the lower half above the control panel and the
+  // in-game tutorial, keeping the map centre clear; the content scrolls.
+  // Floor ~190px = header + description + tabs + about two rows.
+  const inset = Math.max(0, o.bottomInset);
+  const style = o.wide
     ? ""
-    : `max-height:${Math.max(150, Math.floor(window.innerHeight / 2 - Math.max(0, o.bottomInset) - 96))}px`;
+    : `bottom:${inset}px;max-height:${Math.max(190, Math.floor(window.innerHeight / 2 - inset - 4))}px`;
+  const maxH = o.wide ? "max-h-[min(560px,calc(100vh-470px))]" : "";
   return html`<div
     class="pointer-events-auto z-[890] flex flex-col overflow-hidden bg-gray-900/95 text-white shadow-2xl backdrop-blur-sm ${pos}"
     style=${style}
     data-testid="gs-dock"
     data-tab=${o.tab}
   >
-    <div class="flex min-h-10 items-center gap-2 border-b border-white/10 px-2">
+    <div
+      class="flex min-h-10 shrink-0 items-center gap-2 border-b border-white/10 px-2"
+    >
       <span class="font-bold">${o.legendOpen ? "Legend" : o.title}</span>
       <span class="min-w-0 flex-1 truncate text-xs opacity-80"
         >${o.legendOpen ? "What every icon means" : (o.subtitle ?? "")}</span
@@ -138,7 +142,7 @@ export function renderGsDock(
       o.legendOpen
         ? nothing
         : html`<div
-            class="border-b border-white/5 px-2 py-0.5 text-[11px] leading-snug opacity-70"
+            class="shrink-0 border-b border-white/5 px-2 py-0.5 text-[11px] leading-snug opacity-70"
             data-testid="gs-tab-desc"
           >
             ${GS_TAB_DESC[o.tab]}
@@ -146,12 +150,11 @@ export function renderGsDock(
     }
     <div
       class="gs-dock-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2 text-sm sm:text-xs ${maxH}"
-      style=${contentStyle}
     >
       ${content}
     </div>
     <div
-      class="grid grid-cols-6 border-t border-white/10 bg-black/30"
+      class="grid shrink-0 grid-cols-6 border-t border-white/10 bg-black/30"
       role="tablist"
     >
       ${GS_TABS.map((t) => {
