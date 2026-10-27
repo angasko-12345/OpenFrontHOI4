@@ -49,9 +49,9 @@ test.skipIf(!process.env.PT_RUN)(
     // ungated, no atomic project; noweariness = no war weariness,
     // capitulation, peace; noideology = everyone stays non-aligned;
     // norevanche = no revanche claims, recovery or revanche breaks;
-    // nofaction = no factions).
+    // nofaction = no factions; nopuppet = no puppets).
     const ablate =
-      /^no(civgold|trade|artillery|research|atomic|weariness|ideology|revanche|faction)$/.exec(
+      /^no(civgold|trade|artillery|research|atomic|weariness|ideology|revanche|faction|puppet)$/.exec(
         process.env.PT_GS ?? "",
       )?.[1] as
         | "civgold"
@@ -63,6 +63,7 @@ test.skipIf(!process.env.PT_RUN)(
         | "ideology"
         | "revanche"
         | "faction"
+        | "puppet"
         | undefined;
     // M7: count diplomacy events (peace, capitulation, truce broken) by
     // wrapping displayMessage; harness only, the game never reads it.
@@ -138,6 +139,8 @@ test.skipIf(!process.env.PT_RUN)(
           ideo: s?.ideology ?? null,
           // M7C stage 3: faction leader's small id, if in a faction.
           fac: gs?.factionOfPlayer(p)?.leader ?? null,
+          // M7 stage D: overlord's small id while a puppet.
+          pup: alive && gs !== null ? (gs.overlordOf(p) ?? null) : null,
         };
       });
       out.push({

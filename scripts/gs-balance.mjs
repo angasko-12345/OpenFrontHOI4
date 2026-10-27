@@ -11,7 +11,7 @@
 //
 // --a / --b pick the two modes to compare (PT_GS values: on, off, nowar,
 // nocivgold, notrade, noartillery, noresearch, noatomic, noweariness,
-// noideology, norevanche, nofaction = one M5/M6/M7 part off;
+// noideology, norevanche, nofaction, nopuppet = one M5/M6/M7 part off;
 // nowar = Grand Strategy without the M4 war layer). Reports still say
 // "on" for A and "off" for B. --from skips the first seeds, so two
 // processes can fill one cache in parallel.
