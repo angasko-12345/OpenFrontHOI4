@@ -61,6 +61,7 @@ import {
   renderIdeologyRow,
   renderInfoHint,
   renderTruces,
+  revancheRulesNote,
   truceRulesNote,
 } from "./GrandStrategyDiplomacy";
 import {
@@ -1221,7 +1222,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         wars, fastest for large, over-extended nations; it raises attack losses
         and cuts political power and war support. Below
         ${CAPITULATE_PERMILLE / 10}% of your peak land (${d.peakTiles ?? 0}
-        tiles) while at war you capitulate. ${truceRulesNote()}`,
+        tiles) while at war you capitulate. ${truceRulesNote()}
+        ${revancheRulesNote()}`,
       )}
     </div>`;
   }

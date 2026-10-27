@@ -47,9 +47,10 @@ test.skipIf(!process.env.PT_RUN)(
     // PT_GS=nocivgold / notrade / noartillery / noresearch / noatomic /
     // noweariness / noideology: one M5/M6/M7 part off (noatomic = nukes
     // ungated, no atomic project; noweariness = no war weariness,
-    // capitulation, peace; noideology = everyone stays non-aligned).
+    // capitulation, peace; noideology = everyone stays non-aligned;
+    // norevanche = no revanche claims, recovery or revanche breaks).
     const ablate =
-      /^no(civgold|trade|artillery|research|atomic|weariness|ideology)$/.exec(
+      /^no(civgold|trade|artillery|research|atomic|weariness|ideology|revanche)$/.exec(
         process.env.PT_GS ?? "",
       )?.[1] as
         | "civgold"
@@ -59,6 +60,7 @@ test.skipIf(!process.env.PT_RUN)(
         | "atomic"
         | "weariness"
         | "ideology"
+        | "revanche"
         | undefined;
     // M7: count diplomacy events (peace, capitulation, truce broken) by
     // wrapping displayMessage; harness only, the game never reads it.

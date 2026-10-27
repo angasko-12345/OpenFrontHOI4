@@ -50,6 +50,10 @@ import {
   startResearch,
   techById,
 } from "./GrandStrategyResearch";
+import {
+  RECOVERY_MANPOWER,
+  RECOVERY_POLITICAL_POWER,
+} from "./GrandStrategyRevanche";
 
 /** Modifiers a focus grants, all in per-mille. */
 export interface GsModifiers {
@@ -494,6 +498,11 @@ export interface NationGsState {
    */
   ideology?: string;
   ideologyCooldown?: number;
+  /**
+   * M7C stage 2: holds a revanche claim whose truce still stands (set each
+   * second by the execution). Optional: absent = false.
+   */
+  recovering?: boolean;
 }
 
 export interface TimedEntry {
@@ -594,6 +603,10 @@ export function modifiersOf(state: NationGsState): GsModifiers {
   addResearchEffects(m, state.researched ?? []);
   addWearinessEffects(m, state.weariness);
   addEffects(m, ideologyDef(state.ideology).effects);
+  if (state.recovering === true) {
+    m.manpower += RECOVERY_MANPOWER;
+    m.politicalPower += RECOVERY_POLITICAL_POWER;
+  }
   return m;
 }
 

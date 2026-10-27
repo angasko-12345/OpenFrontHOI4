@@ -115,6 +115,16 @@ export interface NationPeaceState {
   truces: Truce[];
   /** Peace offers this nation made, and their seconds left. */
   offers: TimedTarget[];
+  /**
+   * M7C stage 2: claims on land lost to a winner (GrandStrategyRevanche).
+   * Optional: absent = none.
+   */
+  revanche?: {
+    target: number;
+    tiles: number;
+    seconds: number;
+    lock: number;
+  }[];
 }
 
 export function newPeaceState(): NationPeaceState {
@@ -212,6 +222,8 @@ export interface WearinessInput {
   atWar: boolean;
   /** Gain multiplier (ideology, stage B), per-mille; absent = 1000. */
   gainPermille?: number;
+  /** Extra recovery in a second without gain (M7C revanche rally). */
+  extraRecovery?: number;
 }
 
 /** Weariness after one second (thousandths of per-mille). */
@@ -235,7 +247,9 @@ export function advanceWeariness(current: number, i: WearinessInput): number {
       Math.max(0, i.gainPermille ?? 1000)) /
       1000,
   );
-  const recovery = i.atWar ? WAR_RECOVERY : PEACE_RECOVERY;
+  const recovery =
+    (i.atWar ? WAR_RECOVERY : PEACE_RECOVERY) +
+    Math.max(0, Math.floor(i.extraRecovery ?? 0));
   return clamp(
     Math.floor(current) + gain - (gain > 0 ? 0 : recovery),
     0,

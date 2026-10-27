@@ -222,6 +222,10 @@ export interface GrandStrategyUpdate {
   /** M7 stage B: ideology id and seconds before it may change again. */
   ideology: string;
   ideologyCooldown: number;
+  /** M7C stage 2: our revanche claims (wait = seconds until breakable). */
+  revanche?: { target: string; tiles: number; seconds: number; wait: number }[];
+  /** M7C stage 2: rallying after a lost war (truce with a claim holds). */
+  recovering?: boolean;
 }
 
 export interface BonusEventUpdate {

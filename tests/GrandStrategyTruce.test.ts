@@ -262,6 +262,8 @@ describe("GrandStrategyExecution breakable truces", () => {
     for (const side of [gs.peaceOf(a)!, gs.peaceOf(b)!]) {
       for (const t of side.truces) t.lock = 0;
     }
+    // A plain break: no M7C revanche claim (that path has its own test).
+    gs.peaceOf(b)!.revanche = [];
     gs.stateOf(b)!.politicalPower = BREAK_PP_COST;
     game.addExecution(new PeaceExecution(b, a.id(), "break"));
     const ups = [game.executeNextTick(), game.executeNextTick()];

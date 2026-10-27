@@ -14,6 +14,14 @@ import {
   TRUCE_MAX_LOCK,
   TRUCE_MIN_LOCK,
 } from "@openfront/engine-lib/game/GrandStrategyPeace";
+import {
+  RECOVERY_MANPOWER,
+  RECOVERY_POLITICAL_POWER,
+  REVANCHE_ATTACK_LOSS,
+  REVANCHE_BREAK_PP,
+  REVANCHE_MIN_LOST_PERMILLE,
+  REVANCHE_SECONDS,
+} from "@openfront/engine-lib/game/GrandStrategyRevanche";
 import { html, nothing } from "lit";
 
 /**
@@ -66,6 +74,8 @@ export function gsDuration(s: number): string {
 /**
  * Truce list: each truce shows "locked Xs" while it cannot be broken, then
  * "breakable" with a Break button (costs PP, war support and weariness).
+ * M7C stage 2: a truce with a nation we hold a revanche claim on shows a
+ * cheaper Revanche button once half its lock is over (same break intent).
  */
 export function renderTruces(
   d: GrandStrategyUpdate,
@@ -73,22 +83,75 @@ export function renderTruces(
   onBreak: (id: string) => void,
 ) {
   const truces = d.truces ?? [];
-  if (truces.length === 0) return nothing;
-  const canPay = d.politicalPower * 1000 >= BREAK_PP_COST;
-  return html`<div class="font-semibold">Truces</div>
-    ${truces.map((t) => {
-      const lock = t.lock ?? 0;
-      return html`<div
-        class="flex items-center justify-between gap-2"
-        data-testid="gs-truce"
-      >
-        <span class="min-w-0 truncate"
-          >${name(t.target)}
-          <span class="opacity-70">ends ${gsDuration(t.seconds)}</span></span
+  const claims = new Map((d.revanche ?? []).map((r) => [r.target, r]));
+  const pp = d.politicalPower * 1000;
+  const canPay = pp >= BREAK_PP_COST;
+  const canRevanche = pp >= REVANCHE_BREAK_PP;
+  const loose = (d.revanche ?? []).filter(
+    (r) => !truces.some((t) => t.target === r.target),
+  );
+  return html`${
+    d.recovering === true
+      ? html`<div
+          class="rounded bg-emerald-900/50 px-2 py-1"
+          data-testid="gs-recovering"
         >
-        ${
-          lock > 0
-            ? html`<span class="shrink-0 opacity-80">locked ${lock}s</span>`
+          Recovering: +${RECOVERY_MANPOWER / 10}% manpower,
+          +${RECOVERY_POLITICAL_POWER / 10}% PP
+        </div>`
+      : nothing
+  }
+  ${loose.map(
+    (r) =>
+      html`<div
+        class="flex justify-between gap-2 text-amber-200"
+        data-testid="gs-revanche-claim"
+      >
+        <span class="min-w-0 truncate">Revanche: ${name(r.target)}</span>
+        <span class="shrink-0"
+          >${r.tiles} tiles, ${-REVANCHE_ATTACK_LOSS / 10}% losses,
+          ${gsDuration(r.seconds)}</span
+        >
+      </div>`,
+  )}
+  ${truces.length === 0 ? nothing : html`<div class="font-semibold">Truces</div>`}
+  ${truces.map((t) => {
+    const lock = t.lock ?? 0;
+    const claim = claims.get(t.target);
+    return html`<div
+      class="flex items-center justify-between gap-2"
+      data-testid="gs-truce"
+    >
+      <span class="min-w-0 truncate"
+        >${name(t.target)}
+        <span class="opacity-70">ends ${gsDuration(t.seconds)}</span></span
+      >
+      ${
+        claim !== undefined && claim.wait === 0
+          ? html`<button
+              class="min-h-10 shrink-0 rounded px-3 sm:min-h-0 sm:px-2 ${
+                canRevanche
+                  ? "bg-amber-700 hover:bg-amber-600"
+                  : "bg-gray-900/60 text-gray-500"
+              }"
+              ?disabled=${!canRevanche}
+              title="Break for ${REVANCHE_BREAK_PP / 1000} PP to win back ${claim.tiles} tiles"
+              data-testid="gs-revanche"
+              @click=${() => onBreak(t.target)}
+            >
+              Revanche
+            </button>`
+          : lock > 0
+            ? html`<span class="shrink-0 opacity-80"
+                >locked
+                ${lock}s${
+                  claim !== undefined
+                    ? html`<span class="text-amber-300">
+                        · revanche ${claim.wait}s</span
+                      >`
+                    : nothing
+                }</span
+              >`
             : html`<span class="flex shrink-0 items-center gap-1">
                 <span class="text-yellow-300">breakable</span>
                 <button
@@ -104,9 +167,22 @@ export function renderTruces(
                   Break
                 </button>
               </span>`
-        }
-      </div>`;
-    })}`;
+      }
+    </div>`;
+  })}`;
+}
+
+/** Rules note for revanche (shown behind the War tab's (i)). */
+export function revancheRulesNote(): string {
+  return (
+    `Losing ${REVANCHE_MIN_LOST_PERMILLE / 10}%+ of your peak land in a war ` +
+    `leaves a revanche claim on the winner for ${REVANCHE_SECONDS / 60} min: ` +
+    `while the truce holds you recover (+${RECOVERY_MANPOWER / 10}% manpower, ` +
+    `+${RECOVERY_POLITICAL_POWER / 10}% PP, faster weariness recovery); after ` +
+    `half its lock you may break it for ${REVANCHE_BREAK_PP / 1000} PP with no ` +
+    `other cost, and attacking the winner costs ` +
+    `${-REVANCHE_ATTACK_LOSS / 10}% fewer troops until the land is back.`
+  );
 }
 
 /** One-line rules note for truces. */

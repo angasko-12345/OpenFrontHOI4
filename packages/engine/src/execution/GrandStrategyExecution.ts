@@ -96,6 +96,20 @@ import {
   techCost,
 } from "@openfront/engine-lib/game/GrandStrategyResearch";
 import {
+  addRevanche,
+  advanceRevanche,
+  aiSeeksRevanche,
+  canRevancheBreak,
+  payRevanche,
+  RECOVERY_WEARINESS,
+  recovering,
+  REVANCHE_ATTACK_LOSS,
+  REVANCHE_BREAK_PP,
+  revancheOf,
+  revancheOn,
+  revancheWait,
+} from "@openfront/engine-lib/game/GrandStrategyRevanche";
+import {
   addOccupied,
   advanceWarSecond,
   aiJustifyTarget,
@@ -180,7 +194,9 @@ export class GrandStrategyExecution implements Execution {
    * "research" = M6 research, "atomic" = the M6 stage C nuclear gate
    * (nukes buildable without the atomic project; AI skips the project),
    * "weariness" = M7 stage A (war weariness, capitulation, peace, truces),
-   * "ideology" = M7 stage B (no ideology changes; everyone non-aligned).
+   * "ideology" = M7 stage B (no ideology changes; everyone non-aligned),
+   * "revanche" = M7C stage 2 (no revanche claims, recovery or revanche
+   * breaks).
    */
   private ablated?: Set<string>;
 
@@ -192,7 +208,8 @@ export class GrandStrategyExecution implements Execution {
       | "research"
       | "atomic"
       | "weariness"
-      | "ideology",
+      | "ideology"
+      | "revanche",
   ): void {
     (this.ablated ??= new Set()).add(part);
   }
@@ -386,6 +403,13 @@ export class GrandStrategyExecution implements Execution {
       wearinessB: wearinessPermille(this.states.get(b.smallID())?.weariness),
     });
     addTruce(pa, a.smallID(), pb, b.smallID(), lock);
+    if (this.on("revanche")) {
+      const lostTiles =
+        why === "capitulation"
+          ? Math.max(lost, peak - loser.numTilesOwned())
+          : lost;
+      addRevanche(loserState, winner.smallID(), lostTiles, peak, lock);
+    }
     this.mg?.displayMessage(
       why === "peace"
         ? "events_display.gs_peace_signed"
@@ -420,6 +444,12 @@ export class GrandStrategyExecution implements Execution {
       return "invalid_target";
     }
     const mine = this.peaceOf(player)!;
+    if (
+      this.on("revanche") &&
+      canRevancheBreak(mine, target.smallID()) === "ok"
+    ) {
+      return this.revancheBreak(player, target);
+    }
     const check = canBreakTruce(mine, target.smallID());
     if (check !== "ok") return check;
     const s = this.stateOf(player)!;
@@ -440,6 +470,36 @@ export class GrandStrategyExecution implements Execution {
       grantDefensiveGoal(this.warOf(target)!, player.smallID());
     this.mg?.displayMessage(
       "events_display.gs_truce_broken",
+      MessageType.GS_DIPLOMACY,
+      null,
+      undefined,
+      { name: player.displayName(), other: target.displayName() },
+      undefined,
+      player.id(),
+    );
+    return "broken";
+  }
+
+  /**
+   * M7C stage 2: a claimant breaks its truce with the nation that took its
+   * land, early and cheaply: REVANCHE_BREAK_PP only, no war-support or
+   * weariness cost, no war goal for the old winner; the claimant gets one.
+   */
+  private revancheBreak(player: Player, target: Player): PeaceCheck {
+    const s = this.stateOf(player)!;
+    if (s.politicalPower < REVANCHE_BREAK_PP) return "no_political_power";
+    s.politicalPower -= REVANCHE_BREAK_PP;
+    removeTruce(
+      this.peaceOf(player)!,
+      player.smallID(),
+      this.peaceOf(target)!,
+      target.smallID(),
+    );
+    if (this.warLayer) {
+      grantDefensiveGoal(this.warOf(player)!, target.smallID());
+    }
+    this.mg?.displayMessage(
+      "events_display.gs_revanche",
       MessageType.GS_DIPLOMACY,
       null,
       undefined,
@@ -500,6 +560,9 @@ export class GrandStrategyExecution implements Execution {
         defender.smallID(),
         tiles,
       );
+      if (this.on("revanche")) {
+        payRevanche(this.peaceOf(attacker)!, defender.smallID(), tiles);
+      }
     }
     if (!this.warLayer) return;
     const w = this.warOf(attacker);
@@ -646,7 +709,7 @@ export class GrandStrategyExecution implements Execution {
         ? 0
         : equippedPermille(as.artillery, attackTroops);
     const gunMult = artilleryLossPermille(aGuns);
-    const aLoss =
+    let aLoss =
       (attackerTroopLoss *
         Math.floor(
           (Math.floor((Math.floor((aMult * warMult) / 1000) * oilMult) / 1000) *
@@ -655,6 +718,17 @@ export class GrandStrategyExecution implements Execution {
         )) /
       1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
+    if (
+      as !== null &&
+      this.on("weariness") &&
+      this.on("revanche") &&
+      defender.type() !== PlayerType.Bot
+    ) {
+      const ap = this.peace.get(attacker.smallID());
+      if (ap !== undefined && revancheOn(ap, defender.smallID())) {
+        aLoss = (aLoss * (1000 + REVANCHE_ATTACK_LOSS)) / 1000;
+      }
+    }
     if (
       as !== null &&
       defender.type() !== PlayerType.Bot &&
@@ -892,6 +966,7 @@ export class GrandStrategyExecution implements Execution {
       const s = this.stateOf(p)!;
       const ps = this.peaceOf(p)!;
       advancePeaceTimers(ps, p.numTilesOwned());
+      const rallying = this.on("revanche") && this.rally(ps);
       s.weariness = advanceWeariness(s.weariness ?? 0, {
         attackLosses: ps.lossesThisSecond,
         maxTroops: mg.config().maxTroops(p),
@@ -905,7 +980,9 @@ export class GrandStrategyExecution implements Execution {
         gainPermille: this.on("ideology")
           ? wearinessGainFor(s.ideology)
           : undefined,
+        extraRecovery: rallying ? RECOVERY_WEARINESS : undefined,
       });
+      if (this.on("revanche")) s.recovering = rallying;
       ps.lossesThisSecond = 0;
       ps.tilesLostThisSecond = 0;
     }
@@ -975,6 +1052,27 @@ export class GrandStrategyExecution implements Execution {
   ): void {
     const personality = aiPersonalityFor(p.smallID());
     const troops = Math.floor(p.troops());
+    if (this.on("revanche")) {
+      for (const r of revancheOf(ps)) {
+        if (canRevancheBreak(ps, r.target) !== "ok") continue;
+        const o = this.mg!.playerBySmallID(r.target);
+        if (!o.isPlayer() || !(o as Player).isAlive()) continue;
+        const other = o as Player;
+        const input = {
+          strengthPermille: Math.floor(
+            (troops * 1000) / Math.max(1, Math.floor(other.troops())),
+          ),
+          weariness: wearinessPermille(s.weariness),
+          wars: ps.enemies.length,
+          canPay: s.politicalPower >= REVANCHE_BREAK_PP,
+          borders: true,
+        };
+        if (aiSeeksRevanche(personality, input) && p.sharesBorderWith(other)) {
+          this.revancheBreak(p, other);
+          return;
+        }
+      }
+    }
     for (const t of ps.truces) {
       if (t.lock > 0) continue;
       const o = this.mg!.playerBySmallID(t.target);
@@ -997,6 +1095,12 @@ export class GrandStrategyExecution implements Execution {
         return;
       }
     }
+  }
+
+  /** Count claims down; whether the nation is recovering this second. */
+  private rally(ps: NationPeaceState): boolean {
+    advanceRevanche(ps);
+    return recovering(ps);
   }
 
   /** HUD view of a nation's wars, offers and truces. */
@@ -1034,6 +1138,16 @@ export class GrandStrategyExecution implements Execution {
       peaceOffersToMe: offersToMe,
       truces,
       peakTiles: ps?.peakTiles ?? 0,
+      revanche:
+        ps === undefined
+          ? []
+          : revancheOf(ps).map((r) => ({
+              target: idOf(r.target),
+              tiles: r.tiles,
+              seconds: r.seconds,
+              wait: revancheWait(ps, r.target),
+            })),
+      recovering: this.states.get(p.smallID())?.recovering === true,
     };
   }
 
@@ -1227,6 +1341,7 @@ export class GrandStrategyExecution implements Execution {
         weariness: s.weariness ?? 0,
         ideology: ideologyDef(s.ideology).id,
         ideologyCooldown: s.ideologyCooldown ?? 0,
+        recovering: s.recovering === true,
         ...warSnapshot(this.wars.get(id)),
         ...peaceSnapshot(this.peace.get(id)),
       })),
@@ -1267,6 +1382,7 @@ export class GrandStrategyExecution implements Execution {
           weariness: n.weariness,
           ideology: n.ideology,
           ideologyCooldown: n.ideologyCooldown,
+          recovering: n.recovering,
         },
       ]),
     );
@@ -1280,6 +1396,7 @@ export class GrandStrategyExecution implements Execution {
           enemies: n.enemies.map((e) => ({ ...e })),
           truces: n.truces.map((t) => ({ ...t })),
           offers: n.offers.map((t) => ({ ...t })),
+          revanche: n.revanche.map((r) => ({ ...r })),
         },
       ]),
     );
@@ -1330,6 +1447,7 @@ function peaceSnapshot(p: NationPeaceState | undefined) {
     enemies: (p?.enemies ?? []).map((e) => ({ ...e })),
     truces: (p?.truces ?? []).map((t) => ({ ...t })),
     offers: (p?.offers ?? []).map((t) => ({ ...t })),
+    revanche: (p?.revanche ?? []).map((r) => ({ ...r })),
   };
 }
 
@@ -1381,6 +1499,7 @@ const GrandStrategyStateSchema = z.object({
       weariness: zInt(),
       ideology: z.string(),
       ideologyCooldown: zInt(),
+      recovering: z.boolean(),
       peakTiles: zInt(),
       tilesLostThisSecond: zInt(),
       lossesThisSecond: zInt(),
@@ -1395,6 +1514,14 @@ const GrandStrategyStateSchema = z.object({
       ),
       truces: z.array(TruceSchema),
       offers: z.array(TimedTargetSchema),
+      revanche: z.array(
+        z.object({
+          target: zInt(),
+          tiles: zInt(),
+          seconds: zInt(),
+          lock: zInt(),
+        }),
+      ),
     }),
   ),
   coalitionLeader: zInt().nullable(),
@@ -1403,9 +1530,18 @@ type GrandStrategyState = z.infer<typeof GrandStrategyStateSchema>;
 
 export const GrandStrategyExecutionSnapshot = execSnapshotType({
   name: "GrandStrategy",
-  version: 11,
+  version: 12,
   schema: GrandStrategyStateSchema,
   migrations: {
+    // v12 added revanche claims and recovery (M7C stage 2): none yet.
+    11: (d: { initialized: boolean; states: object[] }) => ({
+      ...d,
+      states: d.states.map((n) => ({
+        ...n,
+        recovering: false,
+        revanche: [],
+      })),
+    }),
     // v11 added ideologies (M7 stage B): everyone starts non-aligned.
     10: (d: { initialized: boolean; states: object[] }) => ({
       ...d,

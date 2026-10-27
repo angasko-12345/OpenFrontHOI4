@@ -155,4 +155,31 @@ describe("diffGsAlerts", () => {
     expect(a[0].tab).toBe("decisions");
     expect(diffGsAlerts(upd(), upd({ ideologyCooldown: 5 }), name)).toEqual([]);
   });
+  it("reports a new revanche claim and when it becomes usable", () => {
+    const truce = { target: "w", seconds: 300, lock: 100 };
+    const claim = { target: "w", tiles: 40, seconds: 900, wait: 30 };
+    const gained = diffGsAlerts(
+      upd({ truces: [truce] }),
+      upd({ truces: [truce], revanche: [claim] }),
+      name,
+    );
+    expect(gained).toEqual([
+      expect.objectContaining({ kind: "revanche", target: "w", tab: "war" }),
+    ]);
+    expect(gained[0].text).toContain("40 tiles");
+    const ready = diffGsAlerts(
+      upd({ truces: [truce], revanche: [claim] }),
+      upd({ truces: [truce], revanche: [{ ...claim, wait: 0 }] }),
+      name,
+    );
+    expect(ready.map((x) => x.text)).toEqual(["Revanche ready against N-w"]);
+    // Counting down further raises nothing.
+    expect(
+      diffGsAlerts(
+        upd({ truces: [truce], revanche: [{ ...claim, wait: 0 }] }),
+        upd({ truces: [truce], revanche: [{ ...claim, wait: 0, seconds: 1 }] }),
+        name,
+      ),
+    ).toEqual([]);
+  });
 });

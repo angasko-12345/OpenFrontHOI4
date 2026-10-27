@@ -903,6 +903,7 @@
     "gs_ideology_changed": "{name} has adopted a new ideology: {ideology}",
     "gs_peace_offered": "{name} offers peace (open the Grand Strategy War tab to accept)",
     "gs_peace_signed": "{name} and {other} have signed a peace: truce, unbreakable for {minutes} min",
+    "gs_revanche": "{name} breaks its truce with {other} to win back its lost land",
     "gs_truce_broken": "{name} has broken its truce with {other}",
     "hydrogen_bomb_detonated": "{name} - hydrogen bomb detonated",
     "hydrogen_bomb_inbound": "{name} - hydrogen bomb inbound",

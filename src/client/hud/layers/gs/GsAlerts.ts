@@ -28,7 +28,8 @@ export type GsAlertKind =
   | "focus"
   | "atomic"
   | "wargoal"
-  | "coalition";
+  | "coalition"
+  | "revanche";
 
 export type GsAlertTone = "danger" | "good" | "warn" | "info";
 
@@ -61,6 +62,7 @@ export const ALERT_MS: Record<GsAlertKind, number> = {
   atomic: 10_000,
   wargoal: 12_000,
   coalition: 15_000,
+  revanche: 12_000,
 };
 
 export const MAX_ALERTS = 4;
@@ -149,6 +151,30 @@ export function diffGsAlerts(
         tab: "war",
         tone: "danger",
         target: t.target,
+      });
+    }
+  }
+  // M7C stage 2: a new revanche claim, and a claim whose truce may now be
+  // broken (its wait reached zero while the truce still stands).
+  const prevClaims = new Map((prev.revanche ?? []).map((r) => [r.target, r]));
+  const truceNow = new Set(ids(next.truces));
+  for (const r of next.revanche ?? []) {
+    const before = prevClaims.get(r.target);
+    if (before === undefined) {
+      out.push({
+        kind: "revanche",
+        text: `Revanche claim on ${nameOf(r.target)}: ${r.tiles} tiles`,
+        tab: "war",
+        tone: "warn",
+        target: r.target,
+      });
+    } else if (before.wait > 0 && r.wait === 0 && truceNow.has(r.target)) {
+      out.push({
+        kind: "revanche",
+        text: `Revanche ready against ${nameOf(r.target)}`,
+        tab: "war",
+        tone: "warn",
+        target: r.target,
       });
     }
   }
@@ -277,6 +303,7 @@ const KIND_ICON: Record<GsAlertKind, GsIconName> = {
   atomic: "atomic",
   wargoal: "war",
   coalition: "war",
+  revanche: "war",
 };
 
 export interface GsAlertHandlers {
