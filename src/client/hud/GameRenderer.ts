@@ -295,14 +295,17 @@ export function createRenderer(
   spawnTimer.eventBus = eventBus;
   spawnTimer.transformHandler = transformHandler;
 
-  const grandStrategyPanel = document.querySelector(
-    "grand-strategy-panel",
-  ) as GrandStrategyPanel;
-  if (!(grandStrategyPanel instanceof GrandStrategyPanel)) {
+  // The grand strategy panel is optional (absent in host pages and tests
+  // that do not mount it): wire and register it only when it exists.
+  const grandStrategyPanelEl = document.querySelector("grand-strategy-panel");
+  let grandStrategyPanel: GrandStrategyPanel | null = null;
+  if (grandStrategyPanelEl instanceof GrandStrategyPanel) {
+    grandStrategyPanel = grandStrategyPanelEl;
+    grandStrategyPanel.game = game;
+    grandStrategyPanel.eventBus = eventBus;
+  } else {
     console.error("grand strategy panel not found");
   }
-  grandStrategyPanel.game = game;
-  grandStrategyPanel.eventBus = eventBus;
 
   const immunityTimer = document.querySelector(
     "immunity-timer",
@@ -363,7 +366,7 @@ export function createRenderer(
       playerPanel,
     ),
     spawnTimer,
-    grandStrategyPanel,
+    ...(grandStrategyPanel ? [grandStrategyPanel] : []),
     immunityTimer,
     gameLeftSidebar,
     unitDisplay,
