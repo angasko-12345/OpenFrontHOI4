@@ -48,9 +48,10 @@ test.skipIf(!process.env.PT_RUN)(
     // noweariness / noideology: one M5/M6/M7 part off (noatomic = nukes
     // ungated, no atomic project; noweariness = no war weariness,
     // capitulation, peace; noideology = everyone stays non-aligned;
-    // norevanche = no revanche claims, recovery or revanche breaks).
+    // norevanche = no revanche claims, recovery or revanche breaks;
+    // nofaction = no factions).
     const ablate =
-      /^no(civgold|trade|artillery|research|atomic|weariness|ideology|revanche)$/.exec(
+      /^no(civgold|trade|artillery|research|atomic|weariness|ideology|revanche|faction)$/.exec(
         process.env.PT_GS ?? "",
       )?.[1] as
         | "civgold"
@@ -61,6 +62,7 @@ test.skipIf(!process.env.PT_RUN)(
         | "weariness"
         | "ideology"
         | "revanche"
+        | "faction"
         | undefined;
     // M7: count diplomacy events (peace, capitulation, truce broken) by
     // wrapping displayMessage; harness only, the game never reads it.
@@ -134,6 +136,8 @@ test.skipIf(!process.env.PT_RUN)(
           truces: alive ? (gs?.peaceOf(p)?.truces.length ?? null) : null,
           // M7 stage B: ideology id.
           ideo: s?.ideology ?? null,
+          // M7C stage 3: faction leader's small id, if in a faction.
+          fac: gs?.factionOfPlayer(p)?.leader ?? null,
         };
       });
       out.push({
