@@ -25,8 +25,7 @@ import {
   steelProductionPermille,
   tileHash,
 } from "@openfront/engine-lib/game/GrandStrategyEconomy";
-import {
-} from "@openfront/engine-lib/game/GrandStrategyWar";
+import {} from "@openfront/engine-lib/game/GrandStrategyWar";
 import {
   GrandStrategyExecution,
   GrandStrategyExecutionSnapshot,
