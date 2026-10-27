@@ -23,6 +23,41 @@ import { html, nothing } from "lit";
  * returns a lit template.
  */
 
+/**
+ * One-line hint with an (i) toggle: the full rules text stays one tap away
+ * instead of a paragraph that fills a phone screen. `open` and `onToggle`
+ * belong to the caller (the panel keeps the set of open keys).
+ */
+export function renderInfoHint(
+  key: string,
+  hint: string,
+  detail: unknown,
+  open: boolean,
+  onToggle: (key: string) => void,
+) {
+  return html`<div class="opacity-70" data-testid="gs-info-${key}">
+    <div class="flex items-start justify-between gap-2">
+      <span class="min-w-0">${hint}</span>
+      <button
+        class="min-h-10 min-w-10 shrink-0 rounded-full border border-gray-500 px-1 text-[11px] leading-none hover:bg-gray-700 sm:min-h-0 sm:min-w-0 sm:px-1.5 sm:py-0.5"
+        aria-label="More info"
+        aria-expanded=${open ? "true" : "false"}
+        data-testid="gs-info-toggle-${key}"
+        @click=${() => onToggle(key)}
+      >
+        ${open ? "×" : "i"}
+      </button>
+    </div>
+    ${
+      open
+        ? html`<div class="mt-1 opacity-90" data-testid="gs-info-detail-${key}">
+            ${detail}
+          </div>`
+        : nothing
+    }
+  </div>`;
+}
+
 /** "2m 5s" / "45s". */
 export function gsDuration(s: number): string {
   return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;

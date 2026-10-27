@@ -59,6 +59,7 @@ import { GameView } from "../../view";
 import {
   renderIdeologyChoices,
   renderIdeologyRow,
+  renderInfoHint,
   renderTruces,
   truceRulesNote,
 } from "./GrandStrategyDiplomacy";
@@ -120,6 +121,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   @state() private topOffset = BAR_TOP_PX;
   /** War weariness went up in the latest update. */
   @state() private wearinessRising = false;
+  /** Keys of rules hints whose (i) detail is expanded. */
+  @state() private infoOpen: ReadonlySet<string> = new Set();
   private nextAlertId = 1;
   /** Players who capitulated to us, by Date.now() of the world message. */
   private readonly capitulations = new Map<string, number>();
@@ -691,6 +694,19 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     `;
   }
 
+  private toggleInfo(key: string) {
+    const next = new Set(this.infoOpen);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this.infoOpen = next;
+  }
+
+  private info(key: string, hint: string, detail: unknown) {
+    return renderInfoHint(key, hint, detail, this.infoOpen.has(key), (k) =>
+      this.toggleInfo(k),
+    );
+  }
+
   private renderTab(
     tab: GsTab,
     d: GrandStrategyUpdate,
@@ -1078,19 +1094,21 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           }
         </button>`;
       })}
-      ${
+      ${this.info(
+        "tech",
         d.era < MAX_ERA
-          ? html`<div class="opacity-60">
-              Research ${ERA_ADVANCE} era ${d.era} technologies to reach era
-              ${d.era + 1}. Technologies most nations know cost 30% less.
-            </div>`
-          : nothing
-      }
-      <div class="opacity-60">
-        Atom bombs, hydrogen bombs and MIRVs need the atomic project (era
+          ? `${ERA_ADVANCE} era ${d.era} techs reach era ${d.era + 1}.`
+          : `Nukes need the atomic project.`,
+        html`${
+          d.era < MAX_ERA
+            ? html`Research ${ERA_ADVANCE} era ${d.era} technologies to reach
+              era ${d.era + 1}. Technologies most nations know cost 30% less. `
+            : nothing
+        }Atom
+        bombs, hydrogen bombs and MIRVs need the atomic project (era
         ${ATOMIC_PROJECT_ERA}, no catch-up discount). Every nation is told when
-        one starts or finishes.
-      </div>
+        one starts or finishes.`,
+      )}
     </div>`;
   }
 
@@ -1196,13 +1214,15 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         (id) => this.name(id),
         (id) => this.breakTruce(id),
       )}
-      <div class="opacity-60">
-        Weariness grows with troops lost attacking, land lost and long wars,
-        fastest for large, over-extended nations; it raises attack losses and
-        cuts political power and war support. Below ${CAPITULATE_PERMILLE / 10}%
-        of your peak land (${d.peakTiles ?? 0} tiles) while at war you
-        capitulate. ${truceRulesNote()}
-      </div>
+      ${this.info(
+        "peace",
+        `Capitulate below ${CAPITULATE_PERMILLE / 10}% of peak land (${d.peakTiles ?? 0} tiles).`,
+        html`Weariness grows with troops lost attacking, land lost and long
+        wars, fastest for large, over-extended nations; it raises attack losses
+        and cuts political power and war support. Below
+        ${CAPITULATE_PERMILLE / 10}% of your peak land (${d.peakTiles ?? 0}
+        tiles) while at war you capitulate. ${truceRulesNote()}`,
+      )}
     </div>`;
   }
 
@@ -1233,11 +1253,14 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           : nothing
       }
       ${this.renderPeace(d)}
-      <div class="opacity-70">
-        Attacking a nation without a war goal costs 20% more troops. Fighting
-        far from your capital, cities, ports and factories costs 30% more.
-        Justifying takes ${JUSTIFY_SECONDS}s and ${JUSTIFY_COST / 1000} PP.
-      </div>
+      ${this.info(
+        "justify",
+        `No war goal: +20% losses. Justify: ${JUSTIFY_SECONDS}s, ${JUSTIFY_COST / 1000} PP.`,
+        html`Attacking a nation without a war goal costs 20% more troops.
+        Fighting far from your capital, cities, ports and factories costs 30%
+        more. Justifying takes ${JUSTIFY_SECONDS}s and ${JUSTIFY_COST / 1000}
+        PP.`,
+      )}
       ${
         d.justifying !== null
           ? html`<div>
