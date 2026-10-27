@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
 import {
+  GS_ECONOMY_STEPS,
+  GS_WAR_STEPS,
   STEP_DONE_LINGER_TICKS,
   TUTORIAL_STEPS,
   TutorialContext,
@@ -37,6 +40,7 @@ function ctx(overrides: Partial<TutorialContext> = {}): TutorialContext {
     hydrogenDisabled: false,
     mirvDisabled: false,
     samDisabled: false,
+    grandStrategy: false,
     ...overrides,
   };
 }
@@ -156,7 +160,12 @@ describe("TutorialProgress", () => {
       mirvDisabled: true,
       samDisabled: true,
     });
-    expect(p.total(c)).toBe(TUTORIAL_STEPS.length - 17);
+    expect(p.total(c)).toBe(
+      TUTORIAL_STEPS.length -
+        17 -
+        GS_ECONOMY_STEPS.length -
+        GS_WAR_STEPS.length,
+    );
 
     settle(p, c);
     settle(p, c);
@@ -315,7 +324,10 @@ describe("TutorialProgress step counter", () => {
     const before = ctx({ hasSpawned: true });
     p.update(before);
     const total = p.total(before);
-    expect(total).toBe(TUTORIAL_STEPS.length);
+    // Classic game: the grand strategy steps don't count.
+    expect(total).toBe(
+      TUTORIAL_STEPS.length - GS_ECONOMY_STEPS.length - GS_WAR_STEPS.length,
+    );
 
     const after = ctx({
       hasSpawned: true,
@@ -325,5 +337,83 @@ describe("TutorialProgress step counter", () => {
     p.update(after);
     expect(p.total(after)).toBe(total);
     expect(p.position(after)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("grand strategy tutorial steps", () => {
+  const gsIds = [...GS_ECONOMY_STEPS, ...GS_WAR_STEPS].map((s) => s.id);
+
+  it("classic games skip every grand strategy step", () => {
+    const p = new TutorialProgress();
+    const seen = new Set<string>();
+    const c = ctx({ hasSpawned: true });
+    for (let i = 0; i < 200 && !p.finished(); i++) {
+      p.update(c);
+      const id = p.current()?.id;
+      if (id) seen.add(id);
+      p.skip();
+    }
+    for (const id of gsIds) expect(seen.has(id)).toBe(false);
+  });
+
+  it("GS games explain the HUD after the first City, one idea per step", () => {
+    const first = TUTORIAL_STEPS.findIndex((s) => s.id === "buy_city");
+    const p = new TutorialProgress(TUTORIAL_STEPS.slice(first));
+    const c = ctx({ grandStrategy: true, hasSpawned: true });
+    settle(p, { ...c, cities: 1 });
+    const order: string[] = [];
+    while (p.current()?.id.startsWith("gs_")) {
+      const s = p.current()!;
+      expect(s.manual).toBe(true);
+      order.push(s.id);
+      p.acknowledge();
+      settle(p, { ...c, cities: 1 });
+    }
+    expect(order).toEqual(GS_ECONOMY_STEPS.map((s) => s.id));
+    expect(p.current()?.id).toBe("propose_alliance");
+    // Each dock tab gets its highlight.
+    const hl = GS_ECONOMY_STEPS.map((s) => s.highlight);
+    for (const h of [
+      "gs_resources",
+      "gs_dock",
+      "gs_economy",
+      "gs_laws",
+      "gs_focus",
+      "gs_research",
+      "gs_decisions",
+    ]) {
+      expect(hl).toContain(h);
+    }
+  });
+
+  it("GS games cover war goals, peace, truce breaking, factions and puppets after alliances", () => {
+    const i = TUTORIAL_STEPS.findIndex((s) => s.id === "alliance_info");
+    expect(TUTORIAL_STEPS.slice(i + 1, i + 1 + GS_WAR_STEPS.length)).toEqual(
+      GS_WAR_STEPS,
+    );
+    expect(GS_WAR_STEPS.map((s) => s.id)).toEqual([
+      "gs_war_goal",
+      "gs_peace",
+      "gs_truce_break",
+      "gs_factions",
+      "gs_puppets",
+    ]);
+    for (const s of GS_WAR_STEPS) expect(s.highlight).toBe("gs_war");
+    // Counted only in GS games.
+    const p = new TutorialProgress();
+    const gs = ctx({ hasSpawned: true, grandStrategy: true });
+    p.update(gs);
+    expect(p.total(gs)).toBe(TUTORIAL_STEPS.length);
+  });
+
+  it("every grand strategy step has English text", () => {
+    const en = JSON.parse(readFileSync("resources/lang/en.json", "utf8"));
+    for (const id of gsIds) {
+      const text = en.tutorial.step[id];
+      expect(typeof text, id).toBe("string");
+      expect(text.length, id).toBeGreaterThan(20);
+      expect(text.length, id).toBeLessThan(260);
+    }
+    expect(en.tutorial.step.gs_truce_break).toContain("traitor for 30 seconds");
   });
 });

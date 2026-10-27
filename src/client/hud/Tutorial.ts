@@ -19,7 +19,17 @@ export type TutorialHighlight =
   | "mirv"
   | "sam"
   | "tribes"
-  | "nation";
+  | "nation"
+  // Grand strategy HUD (GrandStrategyPanel): the resource bar, the command
+  // panel toggle and the dock tabs.
+  | "gs_resources"
+  | "gs_dock"
+  | "gs_economy"
+  | "gs_laws"
+  | "gs_focus"
+  | "gs_research"
+  | "gs_decisions"
+  | "gs_war";
 
 /** Emitted whenever the highlighted HUD element changes (null clears it). */
 export class TutorialHighlightEvent implements GameEvent {
@@ -66,6 +76,8 @@ export interface TutorialContext {
   hydrogenDisabled: boolean;
   mirvDisabled: boolean;
   samDisabled: boolean;
+  /** Grand strategy is on: its HUD steps apply. */
+  grandStrategy: boolean;
 }
 
 export interface TutorialStep {
@@ -96,6 +108,35 @@ export interface TutorialStep {
   manual?: true;
   isDone?: (ctx: TutorialContext) => boolean;
 }
+
+/** Grand strategy steps: informational, one idea each, GS games only. */
+const gsStep = (id: string, highlight?: TutorialHighlight): TutorialStep => ({
+  id,
+  highlight,
+  applies: (c) => c.grandStrategy,
+  manual: true,
+});
+
+/** After the first City: what grand strategy adds to running a nation. */
+export const GS_ECONOMY_STEPS: readonly TutorialStep[] = [
+  gsStep("gs_intro"),
+  gsStep("gs_resources", "gs_resources"),
+  gsStep("gs_dock", "gs_dock"),
+  gsStep("gs_production", "gs_economy"),
+  gsStep("gs_laws", "gs_laws"),
+  gsStep("gs_focus", "gs_focus"),
+  gsStep("gs_research", "gs_research"),
+  gsStep("gs_ideology", "gs_decisions"),
+];
+
+/** After the alliance steps: wars, peace, truces, factions and puppets. */
+export const GS_WAR_STEPS: readonly TutorialStep[] = [
+  gsStep("gs_war_goal", "gs_war"),
+  gsStep("gs_peace", "gs_war"),
+  gsStep("gs_truce_break", "gs_war"),
+  gsStep("gs_factions", "gs_war"),
+  gsStep("gs_puppets", "gs_war"),
+];
 
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   // Waits out the multiplayer spawn timer too: the next step asks the
@@ -132,6 +173,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     applies: (c) => !c.cityDisabled,
     isDone: (c) => c.cities > 0,
   },
+  ...GS_ECONOMY_STEPS,
   // Marks the nearest nation with the target crosshair; done once the
   // nation accepts (nations may decline — Skip is the way past that).
   {
@@ -146,6 +188,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     applies: (c) => c.nationsExist && !c.alliancesDisabled,
     manual: true,
   },
+  ...GS_WAR_STEPS,
   {
     id: "buy_factory",
     highlight: "factory",
