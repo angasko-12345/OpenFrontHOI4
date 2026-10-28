@@ -26,7 +26,9 @@ export function equipmentInsight(
   troops: number,
 ): EquipmentInsight {
   const f = d.equipmentFlow;
-  const unequipped = Math.max(0, Math.floor(troops) - d.equipment);
+  // The engine equips the whole army, attacks included, when it says so.
+  const army = f?.army ?? troops;
+  const unequipped = Math.max(0, Math.floor(army) - d.equipment);
   if (f === undefined) {
     return {
       flow: [],

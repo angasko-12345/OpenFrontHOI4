@@ -174,6 +174,16 @@ import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
 import type { ExecRecord, SnapshotReader } from "../snapshot/SnapshotContext";
 import { cancelNukesBetween } from "./alliance/AllianceRequestExecution";
 
+/**
+ * The whole army a stockpile must equip: troops at home plus troops out in
+ * every attack (they left p.troops() when the attack launched).
+ */
+export function armyTroops(p: Player): number {
+  let n = Math.floor(p.troops());
+  for (const a of p.outgoingAttacks()) n += Math.floor(a.troops());
+  return n;
+}
+
 /** Seconds the HUD equipment flow averages over. */
 const FLOW_WINDOW = 10;
 
@@ -1565,10 +1575,13 @@ export class GrandStrategyExecution implements Execution {
   ): CombatAdjustment {
     const as = this.stateOf(attacker);
     const ds = this.stateOf(defender);
+    // One stockpile equips the whole army (home plus every attack), so
+    // splitting an attack into several cannot dodge a shortage.
+    const aArmy = Math.max(armyTroops(attacker), Math.floor(attackTroops));
     const aEquipped =
-      as === null ? 1000 : equippedPermille(as.equipment, attackTroops);
+      as === null ? 1000 : equippedPermille(as.equipment, aArmy);
     const dEquipped =
-      ds === null ? 1000 : equippedPermille(ds.equipment, defender.troops());
+      ds === null ? 1000 : equippedPermille(ds.equipment, armyTroops(defender));
     const aMult = attackerLossMultiplier(
       aEquipped,
       as === null ? ZERO_MODIFIERS : modifiersOf(as),
@@ -1591,7 +1604,7 @@ export class GrandStrategyExecution implements Execution {
     const aGuns =
       as === null || !this.on("artillery")
         ? 0
-        : equippedPermille(as.artillery, attackTroops);
+        : equippedPermille(as.artillery, aArmy);
     const gunMult = artilleryLossPermille(aGuns);
     let aLoss =
       (attackerTroopLoss *
@@ -1775,7 +1788,7 @@ export class GrandStrategyExecution implements Execution {
         type: GameUpdateType.GrandStrategy,
         player: p.id(),
         equipment: s.equipment,
-        equipped: equippedPermille(s.equipment, p.troops()),
+        equipped: equippedPermille(s.equipment, armyTroops(p)),
         equipmentFlow: {
           produced: flow.produced,
           lost: flow.lost,
@@ -1784,6 +1797,7 @@ export class GrandStrategyExecution implements Execution {
             s.equipment >=
             Math.floor(mg.config().maxTroops(p) * STOCKPILE_CAP_MULTIPLE),
           steelPermille: steelProductionPermille(res),
+          army: armyTroops(p),
         },
         efficiency: s.efficiency,
         factories: militaryFactories(factoryLevels, p.numTilesOwned()),
@@ -1804,7 +1818,7 @@ export class GrandStrategyExecution implements Execution {
         importOil: s.importOil,
         artillery: s.artillery,
         artilleryShare: s.artilleryShare,
-        artillerySupport: equippedPermille(s.artillery, p.troops()),
+        artillerySupport: equippedPermille(s.artillery, armyTroops(p)),
         era: eraOf(s.researched),
         researched: [...s.researched],
         research: s.research.map((r) => {

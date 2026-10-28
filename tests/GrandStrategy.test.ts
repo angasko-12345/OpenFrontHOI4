@@ -31,6 +31,7 @@ import {
 } from "@openfront/engine-lib/game/GrandStrategy";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
+  armyTroops,
   GrandStrategyExecution,
   grandStrategyOf,
 } from "@openfront/engine/execution/GrandStrategyExecution";
@@ -180,6 +181,21 @@ describe("GrandStrategyExecution", () => {
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
     expect(bare.attackerTroopLoss).toBeGreaterThan(equipped.attackerTroopLoss);
     expect(bare.attackerTroopLoss).toBe(200);
+  });
+
+  test("equipment covers the whole army, so a small attack can't dodge a shortage", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
+    const st = gs.stateOf(a)!;
+    const army = armyTroops(a);
+    expect(army).toBeGreaterThan(4000);
+    // A stockpile the size of one small attack, but a big army at home.
+    st.equipment = 1000;
+    const short = gs.adjustCombat(a, b, 1000, 100, 10);
+    st.equipment = army * 2;
+    const full = gs.adjustCombat(a, b, 1000, 100, 10);
+    expect(short.attackerTroopLoss).toBeGreaterThan(full.attackerTroopLoss);
   });
 
   test("HUD equipment flow reports production and combat losses", () => {

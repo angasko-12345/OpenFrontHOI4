@@ -1184,7 +1184,7 @@ export class HostLobbyModal extends BaseModal {
         break;
       case "game_settings.grand_strategy":
         this.grandStrategy = checked;
-        this.putGameConfig();
+        void this.putGameConfig();
         break;
       case "game_settings.random_spawn":
         this.handleRandomSpawnChange(checked);

@@ -192,6 +192,8 @@ export interface GrandStrategyUpdate {
     troopGrowth: number;
     atCap: boolean;
     steelPermille: number;
+    /** Troops the stockpile must equip: home plus out attacking. */
+    army?: number;
   };
   /** M6: era, researched technologies, and slots in progress. */
   era: number;
