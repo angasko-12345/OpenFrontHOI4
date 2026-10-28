@@ -92,87 +92,7 @@ export class AllianceRequestExecution implements Execution {
   }
 
   cancelNukesBetweenAlliedPlayers(recipient: Player): void {
-    const neutralized = new Map<Player, number>();
-    const cancelledWarheadLaunchers = new Set<Player>();
-
-    const players = [this.requestor, recipient];
-
-    for (const launcher of players) {
-      const other = launcher === this.requestor ? recipient : this.requestor;
-
-      for (const unit of launcher.units([
-        UnitType.AtomBomb,
-        UnitType.HydrogenBomb,
-        UnitType.MIRV,
-        UnitType.MIRVWarhead,
-      ])) {
-        if (!unit.isActive() || unit.reachedTarget()) continue;
-
-        const targetTile = unit.targetTile();
-
-        if (unit.type() === UnitType.MIRV) {
-          // Compare against the captured target player at launch rather than
-          // the tile's current owner, so tile ownership changes mid-flight
-          // (e.g. from third-party conquest or fallout) don't skip cancellation
-          // while the MIRV continues seeking the newly allied player's tiles.
-          const target =
-            unit.targetPlayer() ??
-            (targetTile ? this.mg.owner(targetTile) : null);
-          if (target !== other) continue;
-        } else if (unit.type() === UnitType.MIRVWarhead) {
-          if (!targetTile || this.mg.owner(targetTile) !== other) continue;
-        } else {
-          if (!targetTile) continue;
-          const magnitude = this.mg.config().nukeMagnitudes(unit.type());
-          if (
-            !wouldNukeBreakAlliance({
-              game: this.mg,
-              targetTile,
-              magnitude,
-              allySmallIds: new Set([other.smallID()]),
-              threshold: this.mg.config().nukeAllianceBreakThreshold(),
-            })
-          ) {
-            continue;
-          }
-        }
-
-        unit.delete(false);
-        if (unit.type() === UnitType.MIRVWarhead) {
-          cancelledWarheadLaunchers.add(launcher);
-        } else {
-          neutralized.set(launcher, (neutralized.get(launcher) ?? 0) + 1);
-        }
-      }
-    }
-
-    for (const launcher of cancelledWarheadLaunchers) {
-      neutralized.set(launcher, (neutralized.get(launcher) ?? 0) + 1);
-    }
-
-    for (const [launcher, count] of neutralized) {
-      const other = launcher === this.requestor ? recipient : this.requestor;
-
-      this.mg.displayMessage(
-        "events_display.alliance_nukes_destroyed_outgoing",
-        MessageType.ALLIANCE_ACCEPTED,
-        launcher.id(),
-        undefined,
-        { name: other.displayName(), count },
-        undefined,
-        other.id(),
-      );
-
-      this.mg.displayMessage(
-        "events_display.alliance_nukes_destroyed_incoming",
-        MessageType.ALLIANCE_ACCEPTED,
-        other.id(),
-        undefined,
-        { name: launcher.displayName(), count },
-        undefined,
-        launcher.id(),
-      );
-    }
+    cancelNukesBetween(this.mg, this.requestor, recipient);
   }
 
   snapshot(w: SnapshotWriter): ExecRecord {
@@ -210,3 +130,95 @@ export const AllianceRequestExecutionSnapshot = execSnapshotType({
   schema: AllianceRequestStateSchema,
   cls: () => AllianceRequestExecution,
 });
+
+/**
+ * Delete nukes in flight between two players who just became friendly
+ * (alliance, or a Grand Strategy truce/puppet bond), with the upstream
+ * messages to both. Shared so every friendship path agrees.
+ */
+export function cancelNukesBetween(
+  mg: Game,
+  requestor: Player,
+  recipient: Player,
+): void {
+  const neutralized = new Map<Player, number>();
+  const cancelledWarheadLaunchers = new Set<Player>();
+
+  const players = [requestor, recipient];
+
+  for (const launcher of players) {
+    const other = launcher === requestor ? recipient : requestor;
+
+    for (const unit of launcher.units([
+      UnitType.AtomBomb,
+      UnitType.HydrogenBomb,
+      UnitType.MIRV,
+      UnitType.MIRVWarhead,
+    ])) {
+      if (!unit.isActive() || unit.reachedTarget()) continue;
+
+      const targetTile = unit.targetTile();
+
+      if (unit.type() === UnitType.MIRV) {
+        // Compare against the captured target player at launch rather than
+        // the tile's current owner, so tile ownership changes mid-flight
+        // (e.g. from third-party conquest or fallout) don't skip cancellation
+        // while the MIRV continues seeking the newly allied player's tiles.
+        const target =
+          unit.targetPlayer() ?? (targetTile ? mg.owner(targetTile) : null);
+        if (target !== other) continue;
+      } else if (unit.type() === UnitType.MIRVWarhead) {
+        if (!targetTile || mg.owner(targetTile) !== other) continue;
+      } else {
+        if (!targetTile) continue;
+        const magnitude = mg.config().nukeMagnitudes(unit.type());
+        if (
+          !wouldNukeBreakAlliance({
+            game: mg,
+            targetTile,
+            magnitude,
+            allySmallIds: new Set([other.smallID()]),
+            threshold: mg.config().nukeAllianceBreakThreshold(),
+          })
+        ) {
+          continue;
+        }
+      }
+
+      unit.delete(false);
+      if (unit.type() === UnitType.MIRVWarhead) {
+        cancelledWarheadLaunchers.add(launcher);
+      } else {
+        neutralized.set(launcher, (neutralized.get(launcher) ?? 0) + 1);
+      }
+    }
+  }
+
+  for (const launcher of cancelledWarheadLaunchers) {
+    neutralized.set(launcher, (neutralized.get(launcher) ?? 0) + 1);
+  }
+
+  for (const [launcher, count] of neutralized) {
+    const other = launcher === requestor ? recipient : requestor;
+
+    mg.displayMessage(
+      "events_display.alliance_nukes_destroyed_outgoing",
+      MessageType.ALLIANCE_ACCEPTED,
+      launcher.id(),
+      undefined,
+      { name: other.displayName(), count },
+      undefined,
+      other.id(),
+    );
+
+    mg.displayMessage(
+      "events_display.alliance_nukes_destroyed_incoming",
+      MessageType.ALLIANCE_ACCEPTED,
+      other.id(),
+      undefined,
+      { name: launcher.displayName(), count },
+      undefined,
+      launcher.id(),
+    );
+  }
+}

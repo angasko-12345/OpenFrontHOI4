@@ -1,5 +1,6 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import { PlayerInfo, PlayerType } from "@openfront/engine-api/game/GameTypes";
+import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import { GameID } from "@openfront/engine-api/Schemas";
 import {
   advanceSecond,
@@ -179,6 +180,25 @@ describe("GrandStrategyExecution", () => {
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
     expect(bare.attackerTroopLoss).toBeGreaterThan(equipped.attackerTroopLoss);
     expect(bare.attackerTroopLoss).toBe(200);
+  });
+
+  test("HUD equipment flow reports production and combat losses", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(2);
+    gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
+    gs.stateOf(a)!.equipment = 1_000_000;
+    gs.adjustCombat(a, b, 1000, 100, 10);
+    const ups = [];
+    for (let i = 0; i < 10; i++) ups.push(game.executeNextTick());
+    const mine = ups
+      .flatMap((u) => u[GameUpdateType.GrandStrategy] ?? [])
+      .filter((u) => u.player === a.id());
+    expect(mine.length).toBeGreaterThan(0);
+    const f = mine[mine.length - 1].equipmentFlow!;
+    expect(f).toBeDefined();
+    expect(f.lost).toBeGreaterThan(0);
+    expect(f.produced).toBeGreaterThanOrEqual(0);
+    expect(f.steelPermille).toBeGreaterThan(0);
   });
 
   test("artillery cuts attacker losses and is lost with them", () => {

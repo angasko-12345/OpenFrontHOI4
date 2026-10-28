@@ -90,6 +90,7 @@ export function diffGsAlerts(
   next: GrandStrategyUpdate,
   nameOf: (id: string) => string,
   capitulatedToMe: ReadonlySet<string> = new Set(),
+  isAlive: (id: string) => boolean = () => true,
 ): GsAlertDraft[] {
   if (prev === null) return [];
   const out: GsAlertDraft[] = [];
@@ -148,9 +149,20 @@ export function diffGsAlerts(
   }
   // A truce that vanishes with time still left on it was broken (by us or
   // by them); one that ran out counts down to its last second first.
+  // A truce also ends when one side becomes the other's puppet, or the
+  // partner is eliminated: neither is a break.
   const nextTruces = new Set(ids(next.truces));
+  const bonded = new Set([
+    ...(next.puppets ?? []).map((p) => p.id),
+    ...(next.overlord ? [next.overlord] : []),
+  ]);
   for (const t of prev.truces ?? []) {
-    if (t.seconds > 2 && !nextTruces.has(t.target)) {
+    if (
+      t.seconds > 2 &&
+      !nextTruces.has(t.target) &&
+      !bonded.has(t.target) &&
+      isAlive(t.target)
+    ) {
       out.push({
         kind: "trucebroken",
         text: `Truce with ${nameOf(t.target)} broken`,

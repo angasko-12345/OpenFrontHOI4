@@ -80,6 +80,8 @@ export type FactionCheck =
   | "too_big"
   | "at_war"
   | "alliance_blocked"
+  /** A faction with a human member takes no one else (no forced alliances). */
+  | "invite_only"
   /** M7 stage D: puppets are in no faction. */
   | "puppet";
 

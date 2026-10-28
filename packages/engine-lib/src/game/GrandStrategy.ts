@@ -682,7 +682,12 @@ export function canSetLaw(state: NationGsState, id: string): LawCheck {
   const current =
     l.category === "conscription" ? state.conscriptionLaw : state.economyLaw;
   if (current === id) return "active";
-  if (state.warSupport < l.minWarSupport + lawWarSupportFor(state.ideology)) {
+  // The ideology offset only raises or lowers a real requirement: stepping
+  // back to a law that needs no war support is always allowed.
+  if (
+    l.minWarSupport > 0 &&
+    state.warSupport < l.minWarSupport + lawWarSupportFor(state.ideology)
+  ) {
     return "low_war_support";
   }
   if (state.politicalPower < LAW_CHANGE_COST) return "no_political_power";
@@ -846,7 +851,8 @@ export function advanceSecond(
     }
   }
 
-  state.activeDecisions = tickTimers(state.activeDecisions);
+  // Active decisions count down after this second's production (below), so
+  // a 60 s decision boosts 60 seconds; cooldowns count down here.
   state.decisionCooldowns = tickTimers(state.decisionCooldowns);
   tickIdeology(state);
 
@@ -888,14 +894,21 @@ export function advanceSecond(
   const share = clampPermille(state.artilleryShare ?? 0);
   const toGuns = Math.floor((total * share) / 1000);
   const produced = total - toGuns;
-  state.artillery = Math.min(
-    Math.max(0, Math.floor(input.maxTroops)),
-    (state.artillery ?? 0) + Math.floor(toGuns / ARTILLERY_COST),
+  // New guns fill up to max troops; a lower cap later never scraps guns
+  // already built (like equipment: never confiscate).
+  const guns = state.artillery ?? 0;
+  state.artillery = Math.max(
+    guns,
+    Math.min(
+      Math.max(0, Math.floor(input.maxTroops)),
+      guns + Math.floor(toGuns / ARTILLERY_COST),
+    ),
   );
   const stockCap = Math.floor(input.maxTroops * STOCKPILE_CAP_MULTIPLE);
   const before = state.equipment;
   state.equipment = Math.min(stockCap, state.equipment + produced);
   if (state.equipment < before) state.equipment = before; // never confiscate
+  state.activeDecisions = tickTimers(state.activeDecisions);
   return { produced: state.equipment - before, completedFocus };
 }
 
@@ -978,6 +991,8 @@ export function aiProductionLine(
   personality: AiPersonality,
   maxTroops: number,
 ): string {
+  // Guns already cover the army: more would be wasted, so equipment only.
+  if ((state.artillery ?? 0) >= Math.floor(maxTroops)) return "line_infantry";
   if (state.equipment >= Math.floor(maxTroops)) return "line_artillery";
   if (personality === "militarist" && state.equipment * 2 >= maxTroops) {
     return "line_balanced";

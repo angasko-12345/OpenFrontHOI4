@@ -24,6 +24,7 @@ import {
   BASE_WAR_SUPPORT,
   defenderLossMultiplier,
   equippedPermille,
+  STOCKPILE_CAP_MULTIPLE,
   FocusCheck,
   GsModifiers,
   militaryFactories,
@@ -171,6 +172,16 @@ import { z } from "zod";
 import { Execution, Game, Player } from "../game/Game";
 import { execSnapshotType } from "../snapshot/ExecutionSnapshot";
 import type { ExecRecord, SnapshotReader } from "../snapshot/SnapshotContext";
+import { cancelNukesBetween } from "./alliance/AllianceRequestExecution";
+
+/** Seconds the HUD equipment flow averages over. */
+const FLOW_WINDOW = 10;
+
+interface EquipmentFlow {
+  window: { produced: number; lost: number; growth: number }[];
+  lostThisSecond: number;
+  troopsBefore: number | null;
+}
 
 /**
  * The one Grand Strategy execution of a game. Owns every nation's industry,
@@ -208,6 +219,12 @@ export interface CombatAdjustment {
 export class GrandStrategyExecution implements Execution {
   private mg: Game | null = null;
   private states = new Map<number, NationGsState>();
+  /**
+   * HUD-only equipment flow per human player: the last ten seconds of
+   * production, combat losses and troop growth. Never read by the rules
+   * and never snapshotted (optional, so restored executions start empty).
+   */
+  private flow?: Map<number, EquipmentFlow>;
   private wars = new Map<number, NationWarState>();
   /**
    * Turns the M4 war layer (occupation, supply, war goals, coalition) off.
@@ -455,7 +472,12 @@ export class GrandStrategyExecution implements Execution {
       wearinessB: wearinessPermille(this.states.get(b.smallID())?.weariness),
     });
     addTruce(pa, a.smallID(), pb, b.smallID(), lock);
+    if (this.mg) cancelNukesBetween(this.mg, a, b);
     if (this.on("revanche")) {
+      // An older claim never speeds up the break of this new truce: only
+      // a claim refreshed by this peace (below) carries this truce's lock.
+      for (const r of revancheOf(pa)) if (r.target === b.smallID()) r.lock = 0;
+      for (const r of revancheOf(pb)) if (r.target === a.smallID()) r.lock = 0;
       const lostTiles =
         why === "capitulation"
           ? Math.max(lost, peak - loser.numTilesOwned())
@@ -657,6 +679,16 @@ export class GrandStrategyExecution implements Execution {
       return "disabled";
     }
     if (this.overlordOf(player) !== undefined) return "puppet";
+    // Joining allies the joiner with every member at once. An AI nation
+    // must not force an alliance on a human (e.g. a losing nation switching
+    // to the human's ideology to stop the war), so factions with a human
+    // member take only humans.
+    if (
+      player.type() !== PlayerType.Human &&
+      f.members.some((m) => this.livePlayer(m)?.type() === PlayerType.Human)
+    ) {
+      return "invite_only";
+    }
     const mine = this.peaceOf(player)!;
     const check = canJoinFaction({
       ideology: this.states.get(player.smallID())?.ideology,
@@ -693,6 +725,12 @@ export class GrandStrategyExecution implements Execution {
       if (mp === null || player.isAlliedWith(mp)) continue;
       player.createAllianceRequest(mp)?.accept();
       if (!player.isAlliedWith(mp)) return "alliance_blocked";
+      // The same side effects as an accepted upstream alliance request.
+      player.updateRelation(mp, 100);
+      mp.updateRelation(player, 100);
+      if (player.hasEmbargoAgainst(mp)) player.endTemporaryEmbargo(mp);
+      if (mp.hasEmbargoAgainst(player)) mp.endTemporaryEmbargo(player);
+      if (this.mg) cancelNukesBetween(this.mg, player, mp);
     }
     f.members.push(player.smallID());
     this.factionMessage("events_display.gs_faction_joined", player, leader);
@@ -1045,6 +1083,7 @@ export class GrandStrategyExecution implements Execution {
     ts.overlord = o;
     ts.autonomy = 0;
     ts.puppetWindows = [];
+    if (this.mg) cancelNukesBetween(this.mg, player, target);
     this.mg?.displayMessage(
       "events_display.gs_puppet_created",
       MessageType.GS_DIPLOMACY,
@@ -1470,6 +1509,48 @@ export class GrandStrategyExecution implements Execution {
     return scaled - give;
   }
 
+  /** Record equipment a human lost in combat, for the HUD flow. */
+  private noteLost(p: Player, amount: number): void {
+    if (amount <= 0 || p.type() !== PlayerType.Human) return;
+    const f = this.flowOf(p);
+    f.lostThisSecond += amount;
+  }
+
+  private flowOf(p: Player): EquipmentFlow {
+    this.flow ??= new Map();
+    let f = this.flow.get(p.smallID());
+    if (f === undefined) {
+      f = { window: [], lostThisSecond: 0, troopsBefore: null };
+      this.flow.set(p.smallID(), f);
+    }
+    return f;
+  }
+
+  /**
+   * Close one second of a human's equipment flow and return the ten-second
+   * averages per second: produced, lost in combat, and troop growth.
+   */
+  private flowSecond(
+    p: Player,
+    produced: number,
+  ): { produced: number; lost: number; troopGrowth: number } {
+    const f = this.flowOf(p);
+    const troops = Math.floor(p.troops());
+    const growth = f.troopsBefore === null ? 0 : troops - f.troopsBefore;
+    f.troopsBefore = troops;
+    f.window.push({ produced, lost: f.lostThisSecond, growth });
+    f.lostThisSecond = 0;
+    if (f.window.length > FLOW_WINDOW) f.window.shift();
+    const n = f.window.length;
+    const sum = (k: "produced" | "lost" | "growth") =>
+      f.window.reduce((a, e) => a + e[k], 0);
+    return {
+      produced: Math.floor(sum("produced") / n),
+      lost: Math.floor(sum("lost") / n),
+      troopGrowth: Math.trunc(sum("growth") / n),
+    };
+  }
+
   /**
    * Apply equipment and doctrine to one conquered tile's losses, and spend
    * the equipment those losses destroy. Player-vs-player only.
@@ -1541,10 +1622,12 @@ export class GrandStrategyExecution implements Execution {
     }
     if (as !== null) {
       as.attackLossesThisSecond += Math.floor(aLoss);
-      as.equipment = Math.max(
-        0,
-        as.equipment - Math.floor((aLoss * aEquipped) / 1000),
+      const spent = Math.min(
+        as.equipment,
+        Math.floor((aLoss * aEquipped) / 1000),
       );
+      as.equipment -= spent;
+      this.noteLost(attacker, spent);
       as.artillery = Math.max(
         0,
         as.artillery - Math.floor((aLoss * aGuns) / 1000),
@@ -1552,10 +1635,12 @@ export class GrandStrategyExecution implements Execution {
     }
     if (ds !== null) {
       ds.defendedThisSecond = true;
-      ds.equipment = Math.max(
-        0,
-        ds.equipment - Math.floor((dLoss * dEquipped) / 1000),
+      const spent = Math.min(
+        ds.equipment,
+        Math.floor((dLoss * dEquipped) / 1000),
       );
+      ds.equipment -= spent;
+      this.noteLost(defender, spent);
     }
     return { attackerTroopLoss: aLoss, defenderTroopLoss: dLoss };
   }
@@ -1665,7 +1750,7 @@ export class GrandStrategyExecution implements Execution {
       s.importOil = this.on("trade") ? trade.oil : 0;
       const res = balanceOf(s);
       const ppBefore = s.politicalPower;
-      advanceSecond(s, {
+      const made = advanceSecond(s, {
         factoryStructureLevels: factoryLevels,
         tilesOwned: p.numTilesOwned(),
         maxTroops: mg.config().maxTroops(p),
@@ -1685,11 +1770,21 @@ export class GrandStrategyExecution implements Execution {
       }
       // Only humans have a HUD to feed; nations would only bloat replays.
       if (p.type() !== PlayerType.Human) continue;
+      const flow = this.flowSecond(p, made.produced);
       humanUpdates.push({
         type: GameUpdateType.GrandStrategy,
         player: p.id(),
         equipment: s.equipment,
         equipped: equippedPermille(s.equipment, p.troops()),
+        equipmentFlow: {
+          produced: flow.produced,
+          lost: flow.lost,
+          troopGrowth: flow.troopGrowth,
+          atCap:
+            s.equipment >=
+            Math.floor(mg.config().maxTroops(p) * STOCKPILE_CAP_MULTIPLE),
+          steelPermille: steelProductionPermille(res),
+        },
         efficiency: s.efficiency,
         factories: militaryFactories(factoryLevels, p.numTilesOwned()),
         focus: s.focus,
@@ -1764,9 +1859,46 @@ export class GrandStrategyExecution implements Execution {
     ]) {
       const p = mg.playerBySmallID(id);
       if (!p.isPlayer() || !p.isAlive()) {
+        this.flow?.delete(id);
         this.states.delete(id);
         this.wars.delete(id);
         this.peace.delete(id);
+      }
+    }
+    this.pruneDead(mg);
+  }
+
+  /**
+   * Drop every reference to a player who is gone: war goals and
+   * justifications against them (they would hold goal slots), and truces,
+   * claims, enemy entries and offers (a rally or war weariness against
+   * nobody). Live sides only; the dead side was deleted above.
+   */
+  private pruneDead(mg: Game): void {
+    const live = (id: number) => {
+      const p = mg.playerBySmallID(id);
+      return p.isPlayer() && p.isAlive();
+    };
+    for (const w of this.wars.values()) {
+      if (w.warGoals.some((g) => !live(g.target))) {
+        w.warGoals = w.warGoals.filter((g) => live(g.target));
+      }
+      if (w.justifying !== null && !live(w.justifying.target)) {
+        w.justifying = null;
+      }
+    }
+    for (const ps of this.peace.values()) {
+      if (ps.truces.some((t) => !live(t.target))) {
+        ps.truces = ps.truces.filter((t) => live(t.target));
+      }
+      if (ps.enemies.some((e) => !live(e.target))) {
+        ps.enemies = ps.enemies.filter((e) => live(e.target));
+      }
+      if (ps.offers.some((o) => !live(o.target))) {
+        ps.offers = ps.offers.filter((o) => live(o.target));
+      }
+      if (ps.revanche?.some((r) => !live(r.target))) {
+        ps.revanche = ps.revanche.filter((r) => live(r.target));
       }
     }
   }
@@ -2062,11 +2194,12 @@ export class GrandStrategyExecution implements Execution {
   private goalUpdate(
     mg: Game,
     g: WarGoal,
-  ): { target: string; seconds: number } {
+  ): { target: string; seconds: number; defensive?: boolean } {
     const t = mg.playerBySmallID(g.target);
     return {
       target: t.isPlayer() ? (t as Player).id() : "",
       seconds: g.seconds,
+      ...(g.defensive === true ? { defensive: true } : {}),
     };
   }
 
@@ -2085,7 +2218,11 @@ export class GrandStrategyExecution implements Execution {
 
   /** AI nations justify against whoever they fight, else their largest neighbour. */
   private aiJustify(p: Player, s: NationGsState, w: NationWarState): void {
-    if (w.justifying !== null || s.politicalPower < JUSTIFY_COST) return;
+    const cost = this.on("ideology")
+      ? justifyCostFor(JUSTIFY_COST, s.ideology)
+      : JUSTIFY_COST;
+    if (w.justifying !== null || s.politicalPower < cost) return;
+    const truces = this.peace.get(p.smallID())?.truces ?? [];
     const attacking = new Set<number>();
     for (const a of p.outgoingAttacks()) {
       const t = a.target();
@@ -2106,6 +2243,8 @@ export class GrandStrategyExecution implements Execution {
       .map((id) => mg.playerBySmallID(id))
       .filter((n): n is Player => n.isPlayer())
       .filter((n) => this.validTarget(p, n as Player))
+      // A goal on a truce partner would mostly expire unused.
+      .filter((n) => !truces.some((t) => t.target === n.smallID()))
       .map((n) => ({
         id: n.smallID(),
         tiles: n.numTilesOwned(),

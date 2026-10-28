@@ -319,6 +319,7 @@ const FACTION_REASON: Record<string, string> = {
   too_big: "Too big",
   at_war: "At war",
   alliance_blocked: "Can't ally",
+  invite_only: "Humans only",
   puppet: "Puppets can't",
 };
 

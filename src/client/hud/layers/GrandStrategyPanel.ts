@@ -28,6 +28,10 @@ import {
   lawsIn,
   NationGsState,
 } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  justifyCostFor,
+  lawWarSupportFor,
+} from "@openfront/engine-lib/game/GrandStrategyIdeology";
 import { CAPITULATE_PERMILLE } from "@openfront/engine-lib/game/GrandStrategyPeace";
 import {
   ATOMIC_PROJECT_ERA,
@@ -87,6 +91,7 @@ import {
   GsTabMeta,
   renderGsDock,
 } from "./gs/GsDock";
+import { equipmentInsight } from "./gs/GsEquipment";
 import { renderGsLegend } from "./gs/GsLegend";
 import { GsResource, renderGsResourceBar } from "./gs/GsResourceBar";
 
@@ -186,6 +191,15 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   tick() {
     const me = this.game?.myPlayer();
     if (!me) return;
+    // A dead player gets no more updates: drop the HUD instead of leaving
+    // stale buttons that send intents the engine rejects.
+    if (!me.isAlive()) {
+      if (this.data !== null || this.alerts.length > 0) {
+        this.data = null;
+        this.alerts = [];
+      }
+      return;
+    }
     const updates = this.game.updatesSinceLastTick();
     const list = updates?.[GameUpdateType.GrandStrategy] ?? [];
     // The world message can land a tick before the update with the truce.
@@ -221,7 +235,18 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           .filter(([, at]) => Date.now() - at < 5000)
           .map(([id]) => id),
       );
-      this.raise(diffGsAlerts(this.data, u, (id) => this.name(id), recent));
+      this.raise(
+        diffGsAlerts(
+          this.data,
+          u,
+          (id) => this.name(id),
+          recent,
+          (id) => {
+            const p = this.game.players().find((x) => x.id() === id);
+            return p !== undefined && p.isAlive();
+          },
+        ),
+      );
       this.data = u;
     }
     this.expireAlerts();
@@ -326,7 +351,8 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       (t.tagName === "INPUT" ||
         t.tagName === "TEXTAREA" ||
         t.tagName === "SELECT" ||
-        t.isContentEditable)
+        t.isContentEditable ||
+        t.closest?.("setting-keybind"))
     ) {
       return;
     }
@@ -405,15 +431,16 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const fighting = new Set<number>();
     for (const a of me.outgoingAttacks()) fighting.add(a.targetID);
     for (const a of me.incomingAttacks()) fighting.add(a.attackerID);
-    const others = this.game
-      .players()
-      .filter(
-        (p) =>
-          p !== me &&
-          p.isAlive() &&
-          p.type() !== PlayerType.Bot &&
-          !me.isFriendly(p),
-      );
+    const others = this.game.players().filter(
+      (p) =>
+        p !== me &&
+        p.isAlive() &&
+        p.type() !== PlayerType.Bot &&
+        !me.isFriendly(p) &&
+        // The engine refuses goals between a puppet and its overlord.
+        p.id() !== this.data?.overlord &&
+        !(this.data?.puppets ?? []).some((x) => x.id === p.id()),
+    );
     others.sort((x, y) => {
       const fx = fighting.has(x.smallID()) ? 1 : 0;
       const fy = fighting.has(y.smallID()) ? 1 : 0;
@@ -483,7 +510,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         tone: "normal",
         detail: [
           `War support ${pct(d.warSupport)}`,
-          `Law change ${LAW_CHANGE_COST / 1000} PP, war goal ${JUSTIFY_COST / 1000} PP`,
+          `Law change ${LAW_CHANGE_COST / 1000} PP, war goal ${justifyCostFor(JUSTIFY_COST, d.ideology) / 1000} PP`,
         ],
       },
       {
@@ -510,10 +537,15 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         tone: d.equipped >= 900 ? "normal" : d.equipped >= 500 ? "warn" : "bad",
         mark: pct(d.equipped),
         markWide: true,
-        detail: [
-          `Equips ${pct(d.equipped)} of the army`,
-          `${d.factories} military factories at ${pct(d.efficiency)} efficiency`,
-        ],
+        detail: (() => {
+          const ins = equipmentInsight(d, troops);
+          return [
+            `Equips ${pct(d.equipped)} of the army (${ins.trend})`,
+            ...ins.flow,
+            ...ins.reasons.slice(0, 2),
+            `Tip: ${ins.tip}`,
+          ];
+        })(),
       },
       {
         key: "artillery",
@@ -814,6 +846,31 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     }
   }
 
+  /** Why "Army equipped" moves: flow per second, reasons, one tip. */
+  private renderEquipmentFlow(d: GrandStrategyUpdate) {
+    const me = this.game.myPlayer();
+    const ins = equipmentInsight(d, me?.troops() ?? 0);
+    if (ins.flow.length === 0) return nothing;
+    const trendColor =
+      ins.trend === "falling"
+        ? "text-red-400"
+        : ins.trend === "rising" || ins.trend === "full"
+          ? "text-green-400"
+          : "text-gray-300";
+    return html`<div
+      class="mt-1 rounded bg-black/30 p-1 text-xs"
+      data-testid="gs-equipment-flow"
+    >
+      <div class="flex justify-between">
+        <span class="text-gray-300">Last 10 s</span>
+        <span class=${trendColor}>${ins.trend}</span>
+      </div>
+      ${ins.flow.map((l) => html`<div>${l}</div>`)}
+      ${ins.reasons.map((l) => html`<div class="text-yellow-300">${l}</div>`)}
+      <div class="text-sky-300">Tip: ${ins.tip}</div>
+    </div>`;
+  }
+
   /** Economy tab: production lines, equipment and industry figures. */
   private renderEconomy(d: GrandStrategyUpdate) {
     const equippedColor =
@@ -862,6 +919,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
               : "bg-red-400",
           "gs-bar-equipped",
         )}
+        ${this.renderEquipmentFlow(d)}
         <div class="mt-1 flex justify-between">
           <span>Production efficiency</span><span>${pct(d.efficiency)}</span>
         </div>
@@ -980,7 +1038,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
                         >`
                       : l.minWarSupport > 0
                         ? html`<span class="float-right font-normal"
-                            >WS ${pct(l.minWarSupport)}</span
+                            >WS
+                            ${pct(
+                              l.minWarSupport + lawWarSupportFor(d.ideology),
+                            )}</span
                           >`
                         : nothing
                   }
@@ -1314,9 +1375,11 @@ export class GrandStrategyPanel extends LitElement implements Controller {
   }
 
   private renderWar(d: GrandStrategyUpdate) {
-    const canAfford = d.politicalPower * 1000 >= JUSTIFY_COST;
+    const cost = justifyCostFor(JUSTIFY_COST, d.ideology);
+    const canAfford = d.politicalPower * 1000 >= cost;
     const goals = new Set(d.warGoals.map((g) => g.target));
-    const full = d.warGoals.length >= MAX_WAR_GOALS;
+    const full =
+      d.warGoals.filter((g) => g.defensive !== true).length >= MAX_WAR_GOALS;
     return html`<div class="mt-2 space-y-2">
       ${
         d.coalitionLeader !== null
@@ -1352,11 +1415,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
       })}
       ${this.info(
         "justify",
-        `No war goal: +20% losses. Justify: ${JUSTIFY_SECONDS}s, ${JUSTIFY_COST / 1000} PP.`,
+        `No war goal: +20% losses. Justify: ${JUSTIFY_SECONDS}s, ${cost / 1000} PP.`,
         html`Attacking a nation without a war goal costs 20% more troops.
         Fighting far from your capital, cities, ports and factories costs 30%
-        more. Justifying takes ${JUSTIFY_SECONDS}s and ${JUSTIFY_COST / 1000}
-        PP.`,
+        more. Justifying takes ${JUSTIFY_SECONDS}s and ${cost / 1000} PP.`,
       )}
       ${
         d.justifying !== null

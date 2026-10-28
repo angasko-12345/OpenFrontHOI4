@@ -180,6 +180,19 @@ export interface GrandStrategyUpdate {
   artilleryShare: number;
   /** Share of the army artillery supports, per-mille. */
   artillerySupport: number;
+  /**
+   * HUD equipment flow, ten-second averages per second: equipment produced,
+   * equipment lost in combat, troop growth (negative when shrinking),
+   * whether the stockpile sits at its cap, and the steel production
+   * multiplier (per-mille). Absent in old replays.
+   */
+  equipmentFlow?: {
+    produced: number;
+    lost: number;
+    troopGrowth: number;
+    atCap: boolean;
+    steelPermille: number;
+  };
   /** M6: era, researched technologies, and slots in progress. */
   era: number;
   researched: string[];
@@ -196,7 +209,8 @@ export interface GrandStrategyUpdate {
   /** War goal being justified, by target player id, and seconds left. */
   justifying: { target: string; seconds: number } | null;
   /** Justified war goals and the seconds each stays valid. */
-  warGoals: { target: string; seconds: number }[];
+  /** `defensive` goals (granted, not justified) take no justify slot. */
+  warGoals: { target: string; seconds: number; defensive?: boolean }[];
   /** Players justifying, or holding, a war goal against this player. */
   justifiedAgainstMe: string[];
   /** The nation the coalition is against, if any. */

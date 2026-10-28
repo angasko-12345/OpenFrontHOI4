@@ -183,3 +183,19 @@ describe("diffGsAlerts", () => {
     ).toEqual([]);
   });
 });
+
+describe("truce ends that are not breaks", () => {
+  test("puppeting or elimination is not reported as a broken truce", () => {
+    const prev = upd({ truces: [{ target: "b", seconds: 150 }] });
+    const puppet = upd({ puppets: [{ id: "b", autonomy: 0, tribute: 250 }] });
+    const kinds = (l: { kind: string }[]) => l.map((a) => a.kind);
+    expect(kinds(diffGsAlerts(prev, puppet, name))).not.toContain(
+      "trucebroken",
+    );
+    const gone = upd({ truces: [] });
+    expect(
+      kinds(diffGsAlerts(prev, gone, name, new Set(), () => false)),
+    ).not.toContain("trucebroken");
+    expect(kinds(diffGsAlerts(prev, gone, name))).toContain("trucebroken");
+  });
+});

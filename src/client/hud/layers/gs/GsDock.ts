@@ -99,7 +99,7 @@ export function renderGsDock(
   const style = o.wide
     ? ""
     : `bottom:${inset}px;max-height:${Math.max(190, Math.floor(window.innerHeight / 2 - inset - 4))}px`;
-  const maxH = o.wide ? "max-h-[min(560px,calc(100vh-470px))]" : "";
+  const maxH = o.wide ? "max-h-[max(180px,min(560px,calc(100vh-470px)))]" : "";
   return html`<div
     class="pointer-events-auto z-[890] flex flex-col overflow-hidden bg-gray-900/95 text-white shadow-2xl backdrop-blur-sm ${pos}"
     style=${style}
