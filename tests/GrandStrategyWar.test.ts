@@ -27,6 +27,7 @@ import {
 } from "@openfront/engine-lib/game/GrandStrategyWar";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
+  armyTroops,
   GrandStrategyExecution,
   grandStrategyOf,
 } from "@openfront/engine/execution/GrandStrategyExecution";
@@ -283,6 +284,8 @@ describe("GrandStrategyExecution war layer", () => {
     const gs = grandStrategyOf(game)!;
     gs.warLayer = false;
     seconds(1);
+    // Plenty of equipment, so spending some does not move the share.
+    gs.stateOf(a)!.equipment = armyTroops(a) * 10;
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
     gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
     expect(gs.adjustCombat(a, b, 1000, 100, 10).attackerTroopLoss).toBe(
@@ -312,6 +315,8 @@ describe("GrandStrategyExecution war layer", () => {
   test("an unjustified attack on a nation costs more than a justified one", () => {
     const gs = grandStrategyOf(game)!;
     seconds(1);
+    // Plenty of equipment, so spending some does not move the share.
+    gs.stateOf(a)!.equipment = armyTroops(a) * 10;
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
     gs.warOf(a)!.warGoals.push({ target: b.smallID(), seconds: 600 });
     const justified = gs.adjustCombat(a, b, 1000, 100, 10);

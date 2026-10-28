@@ -186,7 +186,7 @@ describe("diffGsAlerts", () => {
 
 describe("truce ends that are not breaks", () => {
   test("puppeting or elimination is not reported as a broken truce", () => {
-    const prev = upd({ truces: [{ target: "b", seconds: 150 }] });
+    const prev = upd({ truces: [{ target: "b", seconds: 150, lock: 0 }] });
     const puppet = upd({ puppets: [{ id: "b", autonomy: 0, tribute: 250 }] });
     const kinds = (l: { kind: string }[]) => l.map((a) => a.kind);
     expect(kinds(diffGsAlerts(prev, puppet, name))).not.toContain(

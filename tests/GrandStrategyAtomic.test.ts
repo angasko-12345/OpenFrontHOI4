@@ -336,7 +336,8 @@ describe("Atomic project in a game", () => {
 
 /**
  * Classic (Grand Strategy off) must not change at all. The digest below was
- * recorded at c749d0e (before the atomic project) with this same scripted
+ * recorded at c749d0e (before the atomic project), re-recorded at the
+ * 34a6996 upstream merge (upstream changed annexation), with this same scripted
  * game: ownership, troops, gold and unit counts every 100 ticks. The game
  * builds nuclear weapons, so a leak of the gate into classic would show.
  */
@@ -372,8 +373,8 @@ describe("Atomic project: classic unchanged", { timeout: 300_000 }, () => {
         p.unitsConstructed(UnitType.HydrogenBomb) +
         p.unitsConstructed(UnitType.MIRV);
     }
-    expect(nukes).toBe(16);
-    expect(h).toBe(628019494);
+    expect(nukes).toBe(22);
+    expect(h).toBe(2110619737);
   });
 });
 

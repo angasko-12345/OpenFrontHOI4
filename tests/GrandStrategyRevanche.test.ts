@@ -34,6 +34,7 @@ import {
   revancheWait,
 } from "@openfront/engine-lib/game/GrandStrategyRevanche";
 import {
+  armyTroops,
   GrandStrategyExecution,
   GrandStrategyExecutionSnapshot,
   grandStrategyOf,
@@ -286,6 +287,7 @@ describe("GrandStrategyExecution revanche", () => {
   test("attacking the claim's target costs fewer troops", () => {
     const gs = grandStrategyOf(game)!;
     capitulate();
+    gs.stateOf(b)!.equipment = armyTroops(b) * 10;
     const withClaim = gs.adjustCombat(b, a, 1000, 100, 100);
     gs.peaceOf(b)!.revanche = [];
     const without = gs.adjustCombat(b, a, 1000, 100, 100);
