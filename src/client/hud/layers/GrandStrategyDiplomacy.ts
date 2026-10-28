@@ -23,6 +23,7 @@ import {
   AUTONOMY_MAX,
   INDEPENDENCE_LOCK,
   INDEPENDENCE_PP,
+  INDEPENDENCE_EARLY_AUTONOMY,
   INDEPENDENCE_WEARY_AT,
   PUPPET_MAX_BLOC_SHARE,
   PUPPET_MAX_SIZE,
@@ -586,8 +587,9 @@ export function puppetRulesNote(): string {
     `${PUPPET_TRIBUTE / 10}% of its PP, gold and manpower (less as the ` +
     `overlord's bloc nears ${TRIBUTE_FADE_SHARE / 10}% of the world). ` +
     `Autonomy builds over time, faster under a weary or dominant overlord; ` +
-    `at full autonomy, an overlord over ${INDEPENDENCE_WEARY_AT / 10}% ` +
-    `weariness, or with fewer troops than the puppet, the puppet may break ` +
+    `at full autonomy, or from ${INDEPENDENCE_EARLY_AUTONOMY / 10}% ` +
+    `autonomy if the overlord is over ${INDEPENDENCE_WEARY_AT / 10}% ` +
+    `weariness or has fewer troops than the puppet, the puppet may break ` +
     `free for ${INDEPENDENCE_PP / 1000} PP (truce ${INDEPENDENCE_LOCK / 60} ` +
     `min).`
   );

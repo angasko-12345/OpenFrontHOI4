@@ -356,6 +356,7 @@ describe("GrandStrategyExecution breakable truces", () => {
     const pb = gs.peaceOf(b)!;
     pb.peakTiles = Math.max(b.numTilesOwned() * 3, game.numLandTiles());
     seconds(1);
+    expect(gs.offerPeace(a, b)).toBe("accepted"); // human winner accepts
     const capLock = truceWith(pb, a.smallID())!.lock;
     expect(capLock).toBeGreaterThan(peaceLock);
   });

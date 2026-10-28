@@ -1,5 +1,6 @@
 import { TileRef } from "@openfront/engine-api/game/GameMap";
 import { PlayerInfo, PlayerType } from "@openfront/engine-api/game/GameTypes";
+import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import { GameID } from "@openfront/engine-api/Schemas";
 import {
   modifiersOf,
@@ -15,6 +16,7 @@ import {
   AI_ACCEPT_WEARINESS,
   AI_OFFER_WEARINESS,
   capitulationTarget,
+  hasSurrendered,
   hasTruce,
   LONG_WAR_SECONDS,
   longWars,
@@ -232,7 +234,9 @@ describe("GrandStrategyExecution peace", () => {
   });
 
   function seconds(n: number) {
-    for (let i = 0; i < n * 10; i++) game.executeNextTick();
+    const all: ReturnType<Game["executeNextTick"]>[] = [];
+    for (let i = 0; i < n * 10; i++) all.push(game.executeNextTick());
+    return all;
   }
 
   /** a takes three of b's tiles, as a won attack would. */
@@ -303,7 +307,7 @@ describe("GrandStrategyExecution peace", () => {
     expect(a.outgoingAttacks().filter((x) => !x.retreating()).length).toBe(0);
   });
 
-  test("capitulation: the loser gets a truce, the winner keeps the land", () => {
+  test("capitulation to a human: a surrender it may accept or ignore", () => {
     const gs = grandStrategyOf(game)!;
     seconds(1);
     fight();
@@ -311,8 +315,28 @@ describe("GrandStrategyExecution peace", () => {
     // Pretend b used to be far bigger than now.
     pb.peakTiles = Math.max(b.numTilesOwned() * 3, game.numLandTiles());
     const taken = a.numTilesOwned();
+    const ups = seconds(1);
+    // No automatic truce: a (human) is offered b's surrender.
+    expect(hasTruce(pb, a.smallID())).toBe(false);
+    expect(hasSurrendered(pb, a.smallID())).toBe(true);
+    const up = ups
+      .flatMap((u) => u[GameUpdateType.GrandStrategy] ?? [])
+      .filter((u) => u.player === a.id())
+      .at(-1)!;
+    expect(up.surrendersToMe).toEqual([b.id()]);
+    expect(up.peaceOffersToMe).toEqual([b.id()]);
+    // Ignored, it lapses and the war goes on; no second offer at once.
+    seconds(OFFER_SECONDS + 1);
+    expect(hasSurrendered(pb, a.smallID())).toBe(false);
+    expect(hasTruce(pb, a.smallID())).toBe(false);
+    // Another big loss: a surrender again, and accepting it seals it.
+    pb.peakTiles = Math.max(b.numTilesOwned() * 3, game.numLandTiles());
+    fight();
     seconds(1);
+    expect(hasSurrendered(pb, a.smallID())).toBe(true);
+    expect(gs.offerPeace(a, b)).toBe("accepted");
     expect(hasTruce(pb, a.smallID())).toBe(true);
+
     expect(pb.peakTiles).toBe(b.numTilesOwned());
     expect(a.numTilesOwned()).toBeGreaterThanOrEqual(taken - 1);
   });

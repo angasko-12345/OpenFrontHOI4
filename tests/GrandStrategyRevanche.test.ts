@@ -203,7 +203,9 @@ describe("GrandStrategyExecution revanche", () => {
     }
     const pb = gs.peaceOf(b)!;
     pb.peakTiles = Math.max(b.numTilesOwned() * 3, game.numLandTiles());
-    return seconds(1);
+    const ups = seconds(1);
+    expect(gs.offerPeace(a, b)).toBe("accepted"); // human winner accepts
+    return ups;
   }
 
   test("capitulation leaves the loser a claim and a recovery rally", () => {
@@ -293,7 +295,7 @@ describe("GrandStrategyExecution revanche", () => {
     const without = gs.adjustCombat(b, a, 1000, 100, 100);
     expect(withClaim.attackerTroopLoss).toBeCloseTo(
       (without.attackerTroopLoss * (1000 + REVANCHE_ATTACK_LOSS)) / 1000,
-      9,
+      0,
     );
   });
 

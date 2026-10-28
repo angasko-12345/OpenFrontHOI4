@@ -17,6 +17,7 @@ import {
   aiPrefersPuppet,
   AUTONOMY_MAX,
   canDeclareIndependence,
+  INDEPENDENCE_EARLY_AUTONOMY,
   canPuppet,
   INDEPENDENCE_LOCK,
   INDEPENDENCE_PP,
@@ -129,10 +130,21 @@ describe("puppet rules (M7 stage D)", () => {
     expect(canDeclareIndependence({ ...base, autonomy: AUTONOMY_MAX })).toBe(
       "ok",
     );
+    // A fresh puppet can't leave early, however weary or weak its overlord.
     expect(canDeclareIndependence({ ...base, overlordWeariness: 500 })).toBe(
+      "too_early",
+    );
+    expect(canDeclareIndependence({ ...base, puppetTroops: 1000 })).toBe(
+      "too_early",
+    );
+    const served = { ...base, autonomy: INDEPENDENCE_EARLY_AUTONOMY };
+    expect(canDeclareIndependence(served)).toBe("too_early");
+    expect(canDeclareIndependence({ ...served, overlordWeariness: 500 })).toBe(
       "ok",
     );
-    expect(canDeclareIndependence({ ...base, puppetTroops: 1000 })).toBe("ok");
+    expect(canDeclareIndependence({ ...served, puppetTroops: 1000 })).toBe(
+      "ok",
+    );
     expect(
       canDeclareIndependence({
         ...base,
@@ -243,7 +255,13 @@ describe("GrandStrategyExecution puppets", () => {
       loser.numTilesOwned() * 3,
       game.numLandTiles(),
     );
-    return seconds(1);
+    const ups = seconds(1);
+    // A human winner accepts the surrender.
+    if (winner.type() === PlayerType.Human) {
+      expect(gs.offerPeace(winner, loser)).toBe("accepted");
+      ups.push(...seconds(1));
+    }
+    return ups;
   }
 
   /** B becomes A's puppet through a capitulation. */
@@ -366,12 +384,14 @@ describe("GrandStrategyExecution puppets", () => {
     expect(up.overlord).toBeNull();
   });
 
-  test("a very weary overlord lets its puppet go at once", () => {
+  test("a very weary overlord lets its puppet go early, not at once", () => {
     const gs = grandStrategyOf(game)!;
     puppetB();
     a.setTroops(1_000_000);
     b.setTroops(10);
     gs.stateOf(a)!.weariness = 600_000;
+    expect(gs.independenceCheck(b)).toBe("too_early");
+    gs.stateOf(b)!.autonomy = INDEPENDENCE_EARLY_AUTONOMY;
     expect(gs.independenceCheck(b)).toBe("ok");
   });
 

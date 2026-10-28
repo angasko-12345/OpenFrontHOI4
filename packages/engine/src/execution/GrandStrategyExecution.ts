@@ -18,12 +18,13 @@ import {
   aiChoose,
   AI_PP_RESERVE,
   aiPersonalityFor,
-  attackerLossMultiplier,
   DEFAULT_CONSCRIPTION_LAW,
   DEFAULT_ECONOMY_LAW,
   BASE_WAR_SUPPORT,
   defenderLossMultiplier,
   equippedPermille,
+  shortageLossPermille,
+  WAR_SUPPORT_LOSS_SWING,
   STOCKPILE_CAP_MULTIPLE,
   FocusCheck,
   GsModifiers,
@@ -40,6 +41,12 @@ import {
   troopCapModifier,
   ZERO_MODIFIERS,
 } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  AttackCost,
+  AttackCostPart,
+  attackCost,
+  wearinessAttackLoss,
+} from "@openfront/engine-lib/game/GrandStrategyCombat";
 import {
   civGoldPermille,
   civilianFactories,
@@ -93,6 +100,8 @@ import {
   capitulationTarget,
   enemyEntry,
   hasOffered,
+  hasSurrendered,
+  OFFER_SECONDS,
   hasTruce,
   longWars,
   losingTo,
@@ -165,7 +174,9 @@ import {
   startJustify,
   supplyRange,
   WarGoal,
-  warLossMultiplier,
+  OUT_OF_SUPPLY_LOSS_PERMILLE,
+  UNJUSTIFIED_LOSS_PERMILLE,
+  COALITION_LOSS_PERMILLE,
 } from "@openfront/engine-lib/game/GrandStrategyWar";
 import { zInt } from "@openfront/engine-lib/snapshot/SnapshotType";
 import { z } from "zod";
@@ -422,7 +433,16 @@ export class GrandStrategyExecution implements Execution {
       return "truce";
     }
     if (hasOffered(theirs, player.smallID())) {
-      this.makePeace(player, target, "peace");
+      // Accepting a surrender seals the capitulation; otherwise a peace.
+      if (hasSurrendered(theirs, player.smallID())) {
+        // The land lost counts from the peak at the surrender.
+        const offer = theirs.offers.find((o) => o.target === player.smallID());
+        theirs.peakTiles = Math.max(theirs.peakTiles, offer?.peak ?? 0);
+        this.makePeace(target, player, "capitulation");
+        theirs.peakTiles = target.numTilesOwned();
+      } else {
+        this.makePeace(player, target, "peace");
+      }
       return "accepted";
     }
     if (
@@ -1128,8 +1148,8 @@ export class GrandStrategyExecution implements Execution {
       overlordWeariness: wearinessPermille(
         this.states.get(o.smallID())?.weariness,
       ),
-      puppetTroops: Math.floor(player.troops()),
-      overlordTroops: Math.floor(o.troops()),
+      puppetTroops: armyTroops(player),
+      overlordTroops: armyTroops(o),
       politicalPower: s.politicalPower,
     });
   }
@@ -1562,6 +1582,109 @@ export class GrandStrategyExecution implements Execution {
   }
 
   /**
+   * The attacker's loss multiplier against `defender` with its reasons
+   * (GrandStrategyCombat): equipment, doctrine, weariness, war support,
+   * war goal, supply, coalition, oil, artillery, revanche. Capped at 1.5x;
+   * bots take no penalties. `defender` null = a justified nation target
+   * in supply (the HUD preview).
+   */
+  attackCostOf(
+    attacker: Player,
+    defender: Player | null,
+    aEquipped: number,
+    aGuns: number,
+    tile?: TileRef,
+  ): AttackCost {
+    const as = this.stateOf(attacker);
+    const ds = defender === null ? null : this.stateOf(defender);
+    const parts: AttackCostPart[] = [];
+    if (as !== null) {
+      const mods = modifiersOf(as);
+      const weary = this.on("weariness")
+        ? wearinessAttackLoss(wearinessPermille(as.weariness))
+        : 0;
+      parts.push({
+        key: "shortage",
+        permille: shortageLossPermille(aEquipped),
+      });
+      parts.push({
+        key: "doctrine",
+        permille: Math.max(100, 1000 + mods.attackLoss - weary),
+      });
+      parts.push({ key: "weariness", permille: 1000 + weary });
+      parts.push({
+        key: "morale",
+        permille:
+          1000 +
+          Math.trunc(
+            ((BASE_WAR_SUPPORT - Math.max(0, Math.min(1000, as.warSupport))) *
+              WAR_SUPPORT_LOSS_SWING) /
+              BASE_WAR_SUPPORT,
+          ),
+      });
+      parts.push({ key: "oil", permille: oilLossPermille(balanceOf(as)) });
+      parts.push({ key: "artillery", permille: artilleryLossPermille(aGuns) });
+    }
+    if (ds !== null) {
+      parts.push({
+        key: "defense",
+        permille: Math.max(0, 1000 + modifiersOf(ds).defense),
+      });
+    }
+    const aw = this.warOf(attacker);
+    const vsBot = defender !== null && defender.type() === PlayerType.Bot;
+    if (aw !== null && this.warLayer && defender !== null) {
+      if (tile !== undefined && !this.inSupply(attacker, tile)) {
+        parts.push({
+          key: "supply",
+          permille: 1000 + OUT_OF_SUPPLY_LOSS_PERMILLE,
+        });
+      }
+      if (!vsBot) {
+        if (this.coalitionLeader === defender.smallID()) {
+          parts.push({
+            key: "coalition",
+            permille: 1000 + COALITION_LOSS_PERMILLE,
+          });
+        } else if (!hasWarGoal(aw, defender.smallID())) {
+          parts.push({
+            key: "unjustified",
+            permille: 1000 + UNJUSTIFIED_LOSS_PERMILLE,
+          });
+        }
+      }
+    }
+    if (
+      as !== null &&
+      defender !== null &&
+      !vsBot &&
+      this.on("weariness") &&
+      this.on("revanche")
+    ) {
+      const ap = this.peace.get(attacker.smallID());
+      if (ap !== undefined && revancheOn(ap, defender.smallID())) {
+        parts.push({ key: "revanche", permille: 1000 + REVANCHE_ATTACK_LOSS });
+      }
+    }
+    return attackCost({ parts, vsBot });
+  }
+
+  /**
+   * HUD: what an attack on a justified nation target in supply costs now,
+   * per-mille of classic, with its reasons. HUD-only, never snapshotted.
+   */
+  private attackCostPreview(p: Player, s: NationGsState) {
+    const army = armyTroops(p);
+    const c = this.attackCostOf(
+      p,
+      null,
+      equippedPermille(s.equipment, army),
+      this.on("artillery") ? equippedPermille(s.artillery, army) : 0,
+    );
+    return { total: c.total, raw: c.raw, parts: c.parts };
+  }
+
+  /**
    * Apply equipment and doctrine to one conquered tile's losses, and spend
    * the equipment those losses destroy. Player-vs-player only.
    */
@@ -1582,50 +1705,14 @@ export class GrandStrategyExecution implements Execution {
       as === null ? 1000 : equippedPermille(as.equipment, aArmy);
     const dEquipped =
       ds === null ? 1000 : equippedPermille(ds.equipment, armyTroops(defender));
-    const aMult = attackerLossMultiplier(
-      aEquipped,
-      as === null ? ZERO_MODIFIERS : modifiersOf(as),
-      ds === null ? null : modifiersOf(ds),
-      as === null ? BASE_WAR_SUPPORT : as.warSupport,
-    );
     const dMult = defenderLossMultiplier(dEquipped);
-    const oilMult = as === null ? 1000 : oilLossPermille(balanceOf(as));
-    const aw = this.warOf(attacker);
-    const warMult =
-      aw === null || !this.warLayer
-        ? 1000
-        : warLossMultiplier({
-            targetIsNation: defender.type() !== PlayerType.Bot,
-            justified: hasWarGoal(aw, defender.smallID()),
-            targetIsCoalitionLeader:
-              this.coalitionLeader === defender.smallID(),
-            inSupply: tile === undefined || this.inSupply(attacker, tile),
-          });
     const aGuns =
       as === null || !this.on("artillery")
         ? 0
         : equippedPermille(as.artillery, aArmy);
-    const gunMult = artilleryLossPermille(aGuns);
-    let aLoss =
-      (attackerTroopLoss *
-        Math.floor(
-          (Math.floor((Math.floor((aMult * warMult) / 1000) * oilMult) / 1000) *
-            gunMult) /
-            1000,
-        )) /
-      1000;
+    const cost = this.attackCostOf(attacker, defender, aEquipped, aGuns, tile);
+    const aLoss = (attackerTroopLoss * cost.total) / 1000;
     const dLoss = (defenderTroopLoss * dMult) / 1000;
-    if (
-      as !== null &&
-      this.on("weariness") &&
-      this.on("revanche") &&
-      defender.type() !== PlayerType.Bot
-    ) {
-      const ap = this.peace.get(attacker.smallID());
-      if (ap !== undefined && revancheOn(ap, defender.smallID())) {
-        aLoss = (aLoss * (1000 + REVANCHE_ATTACK_LOSS)) / 1000;
-      }
-    }
     if (
       as !== null &&
       defender.type() !== PlayerType.Bot &&
@@ -1819,6 +1906,7 @@ export class GrandStrategyExecution implements Execution {
         artillery: s.artillery,
         artilleryShare: s.artilleryShare,
         artillerySupport: equippedPermille(s.artillery, armyTroops(p)),
+        attackCost: this.attackCostPreview(p, s),
         era: eraOf(s.researched),
         researched: [...s.researched],
         research: s.research.map((r) => {
@@ -1960,7 +2048,21 @@ export class GrandStrategyExecution implements Execution {
         ps.enemies = ps.enemies.filter((e) => e.target !== t);
         continue;
       }
-      this.makePeace(p, winner as Player, "capitulation");
+      if ((winner as Player).type() === PlayerType.Human) {
+        // A human winner chooses: accept the surrender (truce, puppet
+        // window) or keep fighting. An automatic truce mid-victory felt
+        // like the game taking the win away.
+        addOffer(ps, t, Math.max(ps.peakTiles, p.numTilesOwned()));
+        this.mg?.displayMessage(
+          "events_display.gs_surrender_offered",
+          MessageType.GS_DIPLOMACY,
+          (winner as Player).id(),
+          undefined,
+          { name: p.displayName(), seconds: OFFER_SECONDS },
+        );
+      } else {
+        this.makePeace(p, winner as Player, "capitulation");
+      }
       // A second capitulation needs another large loss from here.
       ps.peakTiles = p.numTilesOwned();
     }
@@ -2084,12 +2186,14 @@ export class GrandStrategyExecution implements Execution {
       lock: t.lock,
     }));
     const offersToMe: string[] = [];
+    const surrendersToMe: string[] = [];
     // Small-id order: map order differs after a snapshot restore.
     const ids = [...this.peace.keys()].sort((x, y) => x - y);
     for (const id of ids) {
       const os = this.peace.get(id)!;
       if (id !== p.smallID() && hasOffered(os, p.smallID())) {
         offersToMe.push(idOf(id));
+        if (hasSurrendered(os, p.smallID())) surrendersToMe.push(idOf(id));
       }
     }
     return {
@@ -2102,6 +2206,7 @@ export class GrandStrategyExecution implements Execution {
       })),
       peaceOffers: timed(ps?.offers ?? []),
       peaceOffersToMe: offersToMe,
+      surrendersToMe,
       truces,
       peakTiles: ps?.peakTiles ?? 0,
       revanche:
@@ -2443,6 +2548,10 @@ function peaceSnapshot(p: NationPeaceState | undefined) {
 
 const TimedEntrySchema = z.object({ id: z.string(), seconds: zInt() });
 const TimedTargetSchema = z.object({ target: zInt(), seconds: zInt() });
+const OfferSchema = TimedTargetSchema.extend({
+  surrender: z.boolean().optional(),
+  peak: zInt().optional(),
+});
 const TruceSchema = z.object({
   target: zInt(),
   seconds: zInt(),
@@ -2506,7 +2615,7 @@ const GrandStrategyStateSchema = z.object({
         }),
       ),
       truces: z.array(TruceSchema),
-      offers: z.array(TimedTargetSchema),
+      offers: z.array(OfferSchema),
       revanche: z.array(
         z.object({
           target: zInt(),

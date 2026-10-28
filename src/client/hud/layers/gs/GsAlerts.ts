@@ -112,7 +112,9 @@ export function diffGsAlerts(
   )) {
     out.push({
       kind: "peace",
-      text: `${nameOf(t)} offers peace`,
+      text: (next.surrendersToMe ?? []).includes(t)
+        ? `${nameOf(t)} surrenders: accept or keep fighting`
+        : `${nameOf(t)} offers peace`,
       tab: "war",
       tone: "good",
       target: t,

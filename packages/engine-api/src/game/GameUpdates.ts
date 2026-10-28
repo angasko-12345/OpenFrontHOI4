@@ -180,6 +180,16 @@ export interface GrandStrategyUpdate {
   artilleryShare: number;
   /** Share of the army artillery supports, per-mille. */
   artillerySupport: number;
+  /** HUD: what attacking a justified nation in supply costs now. */
+  attackCost?: {
+    /** Multiplier on classic attacker losses now, per-mille (capped). */
+    total: number;
+    /** Before the cap. */
+    raw: number;
+    /** Reasons: key (shortage, doctrine, weariness, morale, oil,
+     * artillery) and factor per-mille. */
+    parts: { key: string; permille: number }[];
+  };
   /**
    * HUD equipment flow, ten-second averages per second: equipment produced,
    * equipment lost in combat, troop growth (negative when shrinking),
@@ -230,6 +240,8 @@ export interface GrandStrategyUpdate {
   peaceOffers: { target: string; seconds: number }[];
   /** Players offering peace to this player. */
   peaceOffersToMe: string[];
+  /** Those of peaceOffersToMe that are surrenders (capitulations). */
+  surrendersToMe?: string[];
   /** Truces (no attacks or nukes either way): seconds until they expire,
    * and seconds they still cannot be broken (0 = breakable, M7 A.2). */
   truces: { target: string; seconds: number; lock: number }[];

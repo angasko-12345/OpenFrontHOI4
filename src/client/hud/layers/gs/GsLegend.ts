@@ -1,5 +1,6 @@
 import { html, TemplateResult } from "lit";
 import { GsTab } from "./GsAlerts";
+import { renderGsGuide } from "./GsGuide";
 import { gsIcon, GsIconName } from "./GsIcons";
 
 /**
@@ -121,9 +122,10 @@ export function legendIcons(): Set<GsIconName> {
   return new Set(GS_LEGEND.flatMap((s) => s.entries.map((e) => e.icon)));
 }
 
-/** The "?" legend: each icon with its name and meaning. */
+/** The "?" panel: the plain-language guide, then every icon's meaning. */
 export function renderGsLegend(): TemplateResult {
   return html`<div class="mt-1 space-y-2" data-testid="gs-legend">
+    ${renderGsGuide()}
     ${GS_LEGEND.map(
       (s) =>
         html`<div>

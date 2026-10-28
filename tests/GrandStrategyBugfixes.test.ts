@@ -130,6 +130,7 @@ describe("bug hunt fixes: diplomacy", () => {
       game.numLandTiles(),
     );
     seconds(1);
+    expect(gs.offerPeace(a, b)).toBe("accepted"); // human winner accepts
   }
 
   test("an old revanche claim cannot fast-break a later truce", () => {

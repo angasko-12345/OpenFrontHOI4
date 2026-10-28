@@ -533,7 +533,7 @@ export const TILES_PER_BASE_FACTORY = 1500;
 /** Stockpile cap as a multiple of max troops. */
 export const STOCKPILE_CAP_MULTIPLE = 2;
 /** At 0% equipped, losses are multiplied by 1 + this (per-mille). */
-export const UNEQUIPPED_LOSS_PENALTY = 1000;
+export const UNEQUIPPED_LOSS_PENALTY = 500;
 /** Political power gained per second, in thousandths, before modifiers. */
 export const PP_PER_SECOND = 1000;
 /** Lowest troop-cap modifier, per-mille: max troops never drop below half. */

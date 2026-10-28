@@ -48,8 +48,15 @@ export const AUTONOMY_WEARY_AT = 300;
 export const AUTONOMY_COALITION = 2;
 /** Extra autonomy per second while the puppet has half the overlord's land. */
 export const AUTONOMY_STRONG = 2;
-/** Overlord weariness (per-mille) at which a puppet may break free at once. */
+/** Overlord weariness (per-mille) at which a puppet may break free early. */
 export const INDEPENDENCE_WEARY_AT = 500;
+/**
+ * Autonomy a puppet needs before it may break free early (weary or weaker
+ * overlord). A minimum term: without it a puppet made right after a war
+ * could leave at once, since the winner is usually weary and its troops
+ * are out fighting.
+ */
+export const INDEPENDENCE_EARLY_AUTONOMY = 500;
 /** Political power (thousandths) to declare independence. */
 export const INDEPENDENCE_PP = 25_000;
 /** Truce lock (seconds) after independence or a release. */
@@ -162,17 +169,19 @@ export interface IndependenceInput {
 }
 
 /**
- * Whether a puppet may declare independence: full autonomy, or an
- * overlord that is very war-weary or has fewer troops than the puppet.
+ * Whether a puppet may declare independence: full autonomy, or (after
+ * INDEPENDENCE_EARLY_AUTONOMY) an overlord that is very war-weary or has
+ * fewer troops than the puppet.
  */
 export function canDeclareIndependence(
   i: IndependenceInput,
 ): IndependenceCheck {
   if (!i.isPuppet) return "not_puppet";
-  const free =
-    i.autonomy >= AUTONOMY_MAX ||
-    i.overlordWeariness >= INDEPENDENCE_WEARY_AT ||
-    i.puppetTroops >= i.overlordTroops;
+  const early =
+    i.autonomy >= INDEPENDENCE_EARLY_AUTONOMY &&
+    (i.overlordWeariness >= INDEPENDENCE_WEARY_AT ||
+      i.puppetTroops >= i.overlordTroops);
+  const free = i.autonomy >= AUTONOMY_MAX || early;
   if (!free) return "too_early";
   if (i.politicalPower < INDEPENDENCE_PP) return "no_political_power";
   return "ok";

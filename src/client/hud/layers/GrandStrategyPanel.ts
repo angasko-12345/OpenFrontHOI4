@@ -83,6 +83,7 @@ import {
   MAX_ALERTS,
   renderGsAlerts,
 } from "./gs/GsAlerts";
+import { attackCostView } from "./gs/GsAttackCost";
 import {
   GS_DOCK_KEY,
   GS_TABS,
@@ -871,6 +872,33 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     </div>`;
   }
 
+  /** War tab: what attacks cost in troops right now, and why. */
+  private renderAttackCost(d: GrandStrategyUpdate) {
+    const v = attackCostView(d);
+    if (v === null) return nothing;
+    const total = d.attackCost?.total ?? 1000;
+    const color =
+      total > 1200
+        ? "text-red-400"
+        : total > 1000
+          ? "text-yellow-300"
+          : "text-green-400";
+    return html`<details
+      class="rounded bg-black/30 p-1 text-xs"
+      data-testid="gs-attack-cost"
+    >
+      <summary class="cursor-pointer">
+        Attack cost <b class=${color}>${v.multiplier}</b>
+        <span class="opacity-70">troops lost vs classic (tap for why)</span>
+      </summary>
+      <div class="mt-1">${v.summary}</div>
+      ${v.reasons.map((r) => html`<div class="text-yellow-300">${r}</div>`)}
+      <div class="mt-1 text-gray-300">Depends on the target:</div>
+      ${v.situational.map((r) => html`<div class="opacity-80">${r}</div>`)}
+      ${v.tip !== "" ? html`<div class="text-sky-300">Tip: ${v.tip}</div>` : nothing}
+    </details>`;
+  }
+
   /** Economy tab: production lines, equipment and industry figures. */
   private renderEconomy(d: GrandStrategyUpdate) {
     const equippedColor =
@@ -1297,6 +1325,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const wars = d.wars ?? [];
     const offers = d.peaceOffers ?? [];
     const toMe = d.peaceOffersToMe ?? [];
+    const surrenders = new Set(d.surrendersToMe ?? []);
     const offered = new Map(offers.map((o) => [o.target, o.seconds]));
     const mins = (s: number) =>
       s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
@@ -1306,14 +1335,22 @@ export class GrandStrategyPanel extends LitElement implements Controller {
           html`<div
             class="flex items-center justify-between gap-2 rounded bg-green-900/60 px-2 py-1"
           >
-            <span class="min-w-0 truncate"
-              ><b>${this.name(id)}</b> offers peace</span
+            <span
+              class="min-w-0 truncate"
+              title=${
+                surrenders.has(id)
+                  ? "They lost half their land. Accept: truce, you keep what you took and may puppet them. Ignore: keep fighting."
+                  : "Accept: truce; the side that lost more land may be puppeted."
+              }
+              ><b>${this.name(id)}</b> ${
+                surrenders.has(id) ? "surrenders" : "offers peace"
+              }</span
             >
             <button
               class="min-h-9 shrink-0 rounded bg-green-700 px-3 hover:bg-green-600 sm:min-h-0 sm:px-2"
               @click=${() => this.peace(id)}
             >
-              Accept
+              ${surrenders.has(id) ? "Accept surrender" : "Accept"}
             </button>
           </div>`,
       )}
@@ -1368,8 +1405,10 @@ export class GrandStrategyPanel extends LitElement implements Controller {
         wars, fastest for large, over-extended nations; it raises attack losses
         and cuts political power and war support. Below
         ${CAPITULATE_PERMILLE / 10}% of your peak land (${d.peakTiles ?? 0}
-        tiles) while at war you capitulate. ${truceRulesNote()}
-        ${revancheRulesNote()} ${factionRulesNote()} ${puppetRulesNote()}`,
+        tiles) while at war you capitulate. If you beat a nation that far, it
+        surrenders to you instead: accept within a minute for a truce, or ignore
+        it and keep fighting. ${truceRulesNote()} ${revancheRulesNote()}
+        ${factionRulesNote()} ${puppetRulesNote()}`,
       )}
     </div>`;
   }
@@ -1381,6 +1420,7 @@ export class GrandStrategyPanel extends LitElement implements Controller {
     const full =
       d.warGoals.filter((g) => g.defensive !== true).length >= MAX_WAR_GOALS;
     return html`<div class="mt-2 space-y-2">
+      ${this.renderAttackCost(d)}
       ${
         d.coalitionLeader !== null
           ? html`<div class="rounded bg-red-900/60 px-2 py-1">

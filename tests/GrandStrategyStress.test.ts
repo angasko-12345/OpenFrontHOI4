@@ -189,7 +189,7 @@ describe("GrandStrategy combat math", () => {
   });
 
   test("out-of-range inputs are clamped, never negative", () => {
-    expect(shortageLossPermille(-500)).toBe(2000);
+    expect(shortageLossPermille(-500)).toBe(1500);
     expect(shortageLossPermille(5000)).toBe(1000);
     expect(defenderLossMultiplier(-1)).toBe(1500);
     expect(defenderLossMultiplier(2000)).toBe(1000);

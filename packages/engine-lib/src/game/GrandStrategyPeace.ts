@@ -103,6 +103,14 @@ export interface EnemyEntry {
 export interface TimedTarget {
   target: number;
   seconds: number;
+  /**
+   * A peace offer that is a capitulation: the loser surrenders to a human
+   * winner, who may accept (truce and puppet window, as a capitulation) or
+   * keep fighting. Optional: absent = a plain offer.
+   */
+  surrender?: boolean;
+  /** The loser's peak land when it surrendered (sets the puppet window). */
+  peak?: number;
 }
 
 /** A truce, mirrored on both sides. */
@@ -213,7 +221,7 @@ export function advancePeaceTimers(
     }))
     .filter((t) => t.seconds > 0);
   s.offers = s.offers
-    .map((t) => ({ target: t.target, seconds: t.seconds - 1 }))
+    .map((t) => ({ ...t, seconds: t.seconds - 1 }))
     .filter((t) => t.seconds > 0);
   s.peakTiles = Math.max(s.peakTiles, Math.max(0, Math.floor(tilesOwned)));
 }
@@ -455,9 +463,22 @@ export function hasOffered(s: NationPeaceState, target: number): boolean {
   return s.offers.some((o) => o.target === target);
 }
 
-export function addOffer(s: NationPeaceState, target: number): void {
+export function addOffer(
+  s: NationPeaceState,
+  target: number,
+  surrenderPeak?: number,
+): void {
   s.offers = s.offers.filter((o) => o.target !== target);
-  s.offers.push({ target, seconds: OFFER_SECONDS });
+  s.offers.push(
+    surrenderPeak !== undefined
+      ? { target, seconds: OFFER_SECONDS, surrender: true, peak: surrenderPeak }
+      : { target, seconds: OFFER_SECONDS },
+  );
+}
+
+/** Whether `s` has an open surrender (capitulation) offer to `target`. */
+export function hasSurrendered(s: NationPeaceState, target: number): boolean {
+  return s.offers.some((o) => o.target === target && o.surrender === true);
 }
 
 /** Weariness (per-mille) at which each AI personality offers peace. */

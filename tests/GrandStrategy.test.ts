@@ -29,6 +29,10 @@ import {
   artilleryLossPermille,
   LINE_SHARE,
 } from "@openfront/engine-lib/game/GrandStrategy";
+import {
+  ATTACK_LOSS_CAP,
+  attackCost,
+} from "@openfront/engine-lib/game/GrandStrategyCombat";
 import { AttackExecution } from "@openfront/engine/execution/AttackExecution";
 import {
   armyTroops,
@@ -103,7 +107,7 @@ describe("GrandStrategy rules", () => {
     expect(equippedPermille(0, 0)).toBe(1000);
     expect(equippedPermille(500, 1000)).toBe(500);
     expect(attackerLossMultiplier(1000, ZERO_MODIFIERS, null)).toBe(1000);
-    expect(attackerLossMultiplier(0, ZERO_MODIFIERS, null)).toBe(2000);
+    expect(attackerLossMultiplier(0, ZERO_MODIFIERS, null)).toBe(1500);
     expect(
       attackerLossMultiplier(
         1000,
@@ -180,7 +184,48 @@ describe("GrandStrategyExecution", () => {
     gs.stateOf(a)!.equipment = 0;
     const bare = gs.adjustCombat(a, b, 1000, 100, 10);
     expect(bare.attackerTroopLoss).toBeGreaterThan(equipped.attackerTroopLoss);
-    expect(bare.attackerTroopLoss).toBe(200);
+    expect(bare.attackerTroopLoss).toBe(150);
+  });
+
+  test("stacked penalties cap at 1.5x; attacks on bots take none", () => {
+    expect(
+      attackCost({
+        parts: [
+          { key: "shortage", permille: 1500 },
+          { key: "unjustified", permille: 1200 },
+          { key: "supply", permille: 1300 },
+        ],
+        vsBot: false,
+      }),
+    ).toMatchObject({ total: ATTACK_LOSS_CAP, raw: 2340, limited: true });
+    const bot = attackCost({
+      parts: [
+        { key: "shortage", permille: 1500 },
+        { key: "doctrine", permille: 850 },
+      ],
+      vsBot: true,
+    });
+    expect(bot.total).toBe(1000);
+    // Bonuses still count against bots.
+    expect(
+      attackCost({ parts: [{ key: "doctrine", permille: 850 }], vsBot: true })
+        .total,
+    ).toBe(850);
+    // Parts with no effect are left out of the reasons.
+    expect(
+      attackCost({ parts: [{ key: "oil", permille: 1000 }], vsBot: false })
+        .parts,
+    ).toEqual([]);
+  });
+
+  test("an unequipped, unjustified, out-of-supply attack still costs at most 1.5x", () => {
+    const gs = grandStrategyOf(game)!;
+    seconds(1);
+    gs.stateOf(a)!.equipment = 0;
+    gs.stateOf(a)!.warSupport = 0;
+    const r = gs.adjustCombat(a, b, 1000, 100, 10);
+    expect(r.attackerTroopLoss).toBeLessThanOrEqual(150);
+    expect(r.attackerTroopLoss).toBeGreaterThan(100);
   });
 
   test("equipment covers the whole army, so a small attack can't dodge a shortage", () => {
